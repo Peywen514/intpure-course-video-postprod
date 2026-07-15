@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>字幕位置/寬度/字距 調整工具</title>
+<style>
+  body { margin:0; background:#1c1b19; color:#eee; font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 1.1rem; font-weight: 600; color:#ccc; }
+  .stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  video { width: 100%; display: block; }
+  .caption-box {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    cursor: move;
+    user-select: none;
+    padding: 4px 8px;
+    box-sizing: border-box;
+    border: 2.5px solid rgba(74,144,247,0.9);
+    background: rgba(74,144,247,0.22);
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.35);
+    min-height: 34px;
+    transition: background-color 0.1s;
+  }
+  .caption-box .width-label {
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.7rem;
+    color: #4a90f7;
+    background: rgba(0,0,0,0.6);
+    padding: 1px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .caption-box .txt {
+    display: inline-block;
+    color: #fff;
+    font-weight: 700;
+    -webkit-text-stroke: 3px #000;
+    paint-order: stroke fill;
+    white-space: nowrap;
+  }
+  .caption-box.dragging {
+    border-color: #ffd24a;
+    background: rgba(255,210,74,0.12);
+  }
+  .handle-w {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 14px;
+    cursor: ew-resize;
+    background: rgba(74,144,247,0.55);
+  }
+  .caption-box.dragging .handle-w,
+  .caption-box:hover .handle-w { background: rgba(74,144,247,0.5); }
+  .handle-w.left { left: -14px; }
+  .handle-w.right { right: -14px; }
+
+  .controls {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .field { background:#26241f; border-radius:8px; padding:10px 14px; }
+  .field label { display:block; font-size:0.75rem; color:#aaa; margin-bottom:6px; }
+  .field .row { display:flex; align-items:center; gap:10px; }
+  .field input[type=range] { flex:1; }
+  .field .val { width:42px; text-align:right; font-variant-numeric: tabular-nums; }
+  .actions { margin-top: 18px; display:flex; gap:10px; align-items:center; }
+  button {
+    background:#4a90f7; color:#fff; border:none; border-radius:8px;
+    padding:10px 22px; font-size:0.95rem; cursor:pointer;
+  }
+  button:hover { background:#3a7de0; }
+  .status { color:#8fd39a; font-size:0.85rem; }
+  .hint { color:#999; font-size:0.8rem; margin-top:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>拖拉調整字幕位置 / 寬度 / 字距（<span id="episode-label"></span>）</h1>
+  <div class="stage" id="stage">
+    <video id="video" controls></video>
+    <div class="caption-box" id="captionBox">
+      <span class="width-label" id="widthLabel"></span>
+      <div class="handle-w left" data-side="left"></div>
+      <span class="txt" id="captionText">（拖動時間軸看實際字幕文字）</span>
+      <div class="handle-w right" data-side="right"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="field">
+      <label>高度（MarginV，離底部距離，越大越高）</label>
+      <div class="row">
+        <input type="range" id="marginV" min="20" max="400" step="2">
+        <span class="val" id="marginVVal"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label>寬度（左右邊界 MarginL/MarginR，越小越寬）</label>
+      <div class="row">
+        <input type="range" id="marginLR" min="20" max="400" step="2">
+        <span class="val" id="marginLRVal"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label>字間距（Spacing）</label>
+      <div class="row">
+        <input type="range" id="spacing" min="0" max="12" step="0.5">
+        <span class="val" id="spacingVal"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="hint">垂直拖動字幕框調整高度；拖動左右藍色把手調整寬度；上方滑桿也可直接輸入數值。畫面上的文字是這支影片實際轉錄出來的字幕，跟著時間軸走。</div>
+
+  <div class="actions">
+    <button id="saveBtn">儲存</button>
+    <span class="status" id="statusMsg"></span>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const episode = params.get("episode") || "";
+const videoRel = params.get("video") || "";
+document.getElementById("episode-label").textContent = episode;
+
+const video = document.getElementById("video");
+const stage = document.getElementById("stage");
+const box = document.getElementById("captionBox");
+const textEl = document.getElementById("captionText");
+const marginVInput = document.getElementById("marginV");
+const marginLRInput = document.getElementById("marginLR");
+const spacingInput = document.getElementById("spacing");
+const marginVVal = document.getElementById("marginVVal");
+const marginLRVal = document.getElementById("marginLRVal");
+const spacingVal = document.getElementById("spacingVal");
+const statusMsg = document.getElementById("statusMsg");
+
+let words = [];
+let state = { MarginV: 60, MarginL: 120, MarginR: 120, Spacing: 2 };
+// PlayRes 假設 1920x1080，跟 config.py 一致
+const PLAY_RES_Y = 1080;
+const PLAY_RES_X = 1920;
+
+video.src = videoRel;
+
+function applyStateToUI() {
+  marginVInput.value = state.MarginV;
+  marginLRInput.value = state.MarginL;
+  spacingInput.value = state.Spacing;
+  marginVVal.textContent = state.MarginV;
+  marginLRVal.textContent = state.MarginL;
+  spacingVal.textContent = state.Spacing;
+  renderBox();
+}
+
+function renderBox() {
+  // MarginV 是「離底部的像素距離」（以 1920x1080 為基準），依畫面實際顯示尺寸換算比例
+  const stageH = stage.clientHeight;
+  const stageW = stage.clientWidth;
+  const bottomPx = (state.MarginV / PLAY_RES_Y) * stageH;
+  box.style.bottom = bottomPx + "px";
+  const widthPx = stageW - ((state.MarginL + state.MarginR) / PLAY_RES_X) * stageW;
+  const finalWidthPx = Math.max(60, widthPx);
+  box.style.width = finalWidthPx + "px";
+  textEl.style.letterSpacing = state.Spacing + "px";
+  const fontPx = (70 / PLAY_RES_Y) * stageH; // 對應 config.py Fontsize=70
+  textEl.style.fontSize = Math.max(10, fontPx) + "px";
+  const widthLabel = document.getElementById("widthLabel");
+  const realWidthPx = Math.round((finalWidthPx / stageW) * PLAY_RES_X);
+  widthLabel.textContent = `寬度 ${realWidthPx}px（MarginL ${state.MarginL} / MarginR ${state.MarginR}）`;
+  // 拖拉把手可能讓 MarginL/MarginR 不對稱；下方滑桿顯示兩者平均值，避免看起來卡住不動
+  const avgMargin = Math.round((state.MarginL + state.MarginR) / 2);
+  marginLRInput.value = avgMargin;
+  marginLRVal.textContent = state.MarginL === state.MarginR ? state.MarginL : `${state.MarginL}/${state.MarginR}`;
+}
+
+async function loadDefaults() {
+  const res = await fetch(`/api/defaults?episode=${encodeURIComponent(episode)}`);
+  const data = await res.json();
+  words = data.words || [];
+  const base = data.override || data.defaults;
+  state = { ...state, ...base };
+  applyStateToUI();
+}
+
+video.addEventListener("timeupdate", () => {
+  const t = video.currentTime;
+  const w = words.find(x => t >= x.start && t <= x.end + 0.3);
+  if (w) {
+    // 顯示當前詞附近一小段文字（同一個大約 3 秒視窗內的詞拼起來）
+    const nearby = words.filter(x => x.start >= t - 1.5 && x.start <= t + 1.5);
+    textEl.textContent = nearby.map(x => x.word).join("") || w.word;
+  }
+});
+
+// 垂直拖拉（高度）
+let draggingV = false, dragStartY = 0, dragStartMarginV = 0;
+box.addEventListener("mousedown", (e) => {
+  if (e.target.classList.contains("handle-w")) return;
+  draggingV = true;
+  box.classList.add("dragging");
+  dragStartY = e.clientY;
+  dragStartMarginV = state.MarginV;
+  e.preventDefault();
+});
+
+// 左右拉伸（寬度）
+let draggingW = null, dragStartX = 0, dragStartMarginL = 0, dragStartMarginR = 0;
+box.querySelectorAll(".handle-w").forEach(h => {
+  h.addEventListener("mousedown", (e) => {
+    draggingW = h.dataset.side;
+    box.classList.add("dragging");
+    dragStartX = e.clientX;
+    dragStartMarginL = state.MarginL;
+    dragStartMarginR = state.MarginR;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+});
+
+window.addEventListener("mousemove", (e) => {
+  const stageH = stage.clientHeight;
+  const stageW = stage.clientWidth;
+  if (draggingV) {
+    const dy = e.clientY - dragStartY; // 往下拖 = 高度變小
+    const deltaMarginV = -(dy / stageH) * PLAY_RES_Y;
+    state.MarginV = Math.max(20, Math.min(400, Math.round(dragStartMarginV + deltaMarginV)));
+    applyStateToUI();
+  } else if (draggingW) {
+    const dx = e.clientX - dragStartX;
+    const deltaMargin = -(dx / stageW) * PLAY_RES_X;
+    if (draggingW === "left") {
+      state.MarginL = Math.max(20, Math.min(400, Math.round(dragStartMarginL + deltaMargin)));
+    } else {
+      state.MarginR = Math.max(20, Math.min(400, Math.round(dragStartMarginR - deltaMargin)));
+    }
+    applyStateToUI();
+  }
+});
+
+window.addEventListener("mouseup", () => {
+  draggingV = false;
+  draggingW = null;
+  box.classList.remove("dragging");
+});
+
+marginVInput.addEventListener("input", () => {
+  state.MarginV = Number(marginVInput.value);
+  applyStateToUI();
+});
+marginLRInput.addEventListener("input", () => {
+  state.MarginL = Number(marginLRInput.value);
+  state.MarginR = Number(marginLRInput.value);
+  applyStateToUI();
+});
+spacingInput.addEventListener("input", () => {
+  state.Spacing = Number(spacingInput.value);
+  applyStateToUI();
+});
+
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  const res = await fetch(`/api/save?episode=${encodeURIComponent(episode)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(state),
+  });
+  if (res.ok) {
+    statusMsg.textContent = "已儲存 style_override.json";
+    setTimeout(() => statusMsg.textContent = "", 3000);
+  } else {
+    statusMsg.textContent = "儲存失敗";
+  }
+});
+
+window.addEventListener("resize", renderBox);
+loadDefaults();
+</script>
+</body>
+</html>

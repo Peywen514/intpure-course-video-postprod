@@ -1,0 +1,12 @@
+faster-whisper
+# stable-ts 包住上面的 faster-whisper 當推論後端，用 VAD + token 機率反覆修正逐字時間戳，
+# 比原生 faster-whisper 輸出更準（細節見 lib/whisper_transcribe.py 開頭 docstring）。
+# [fw] extra 會自動裝好相容的 faster-whisper（本身也會裝 openai-whisper/torch 當底層依賴，
+# 屬 stable-ts 正常行為，不是我們額外要求的）；faster-whisper 版本仍由上一行單獨鎖定/管理。
+stable-ts[fw]
+# auto-editor（Unlicense/Public Domain）：lib/silence_detect.py 的靜音偵測引擎，只借用
+# 它分析音軌算出的「哪些區間安靜」時間軸（--export v1），不用它接管剪輯輸出。這個 pip
+# 套件本身只是個下載器（幾 KB），第一次執行 auto-editor 指令時會從 GitHub Releases 抓
+# 對應平台的編譯執行檔快取在 site-packages 裡，之後不會重複下載，但代表第一次跑需要
+# 網路。環境沒裝/沒網路時 lib/silence_detect.py 會自動退回舊版 ffmpeg silencedetect。
+auto-editor

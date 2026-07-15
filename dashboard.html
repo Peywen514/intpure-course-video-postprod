@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>影片後製儀表板</title>
+<style>
+  :root {
+    --bg:#f5f4f1; --card:#fff; --text:#2a2620; --soft:#6b6459; --border:#e4e0d8;
+    --accent:#1f6feb; --accent-soft:#eaf2ff; --ok:#1e7d42; --ok-bg:#e9f7ee;
+    --pending-bg:#f0ede6; --err:#c0392b;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; }
+  .wrap { max-width: 980px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:1.4rem; margin-bottom:4px; }
+  .sub { color:var(--soft); margin-bottom:24px; font-size:0.9rem; }
+  .episode {
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:20px 24px; margin-bottom:18px;
+  }
+  .episode-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+  .episode-header h2 { font-size:1.1rem; margin:0; }
+  .badges { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .badge {
+    font-size:0.72rem; padding:3px 9px; border-radius:999px; background:var(--pending-bg); color:var(--soft);
+  }
+  .badge.done { background:var(--ok-bg); color:var(--ok); }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  button {
+    background:var(--pending-bg); color:var(--text); border:none; border-radius:8px;
+    padding:9px 16px; font-size:0.88rem; cursor:pointer;
+  }
+  button:hover { background:#e2ded4; }
+  button.secondary { background:var(--pending-bg); color:var(--text); }
+  button.secondary:hover { background:#e2ded4; }
+  button.done { background:var(--accent); color:#fff; }
+  button.done:hover { background:#1a5fd0; }
+  button:disabled { opacity:0.5; cursor:not-allowed; }
+  .job-msg { margin-top:10px; font-size:0.85rem; color:var(--soft); min-height:1.2em; }
+  .job-msg.err { color:var(--err); }
+  .job-msg.skip { color:#a87f1a; }
+  .flagged-list { margin-top:14px; border-top:1px solid var(--border); padding-top:12px; }
+  .flagged-item { display:flex; align-items:center; gap:8px; font-size:0.85rem; padding:4px 0; }
+  .flagged-item .txt { color:var(--soft); }
+  .flagged-item b { color:var(--text); }
+  .flagged-item .idx-label { color:var(--soft); font-size:0.75rem; min-width:26px; }
+  .batch-select { display:flex; align-items:center; gap:6px; margin:8px 0; font-size:0.82rem; flex-wrap:wrap; }
+  .batch-select button { padding:5px 10px; font-size:0.78rem; }
+  .batch-select input[type=number] { padding:3px 6px; border-radius:6px; border:1px solid var(--border); }
+  .outputs-block { margin-top:14px; border-top:1px solid var(--border); padding-top:12px; }
+  .outputs-title { font-size:0.85rem; color:var(--soft); margin-bottom:8px; }
+  .output-row {
+    display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px;
+    background:var(--pending-bg); margin-bottom:6px; flex-wrap:wrap;
+  }
+  .output-row.final { background:var(--ok-bg); border:1px solid #a9dcc0; }
+  .output-row .output-label { font-weight:600; font-size:0.85rem; min-width:150px; }
+  .output-row .output-desc { color:var(--soft); font-size:0.78rem; flex:1; min-width:160px; }
+  .output-row a { font-size:0.82rem; color:var(--accent); text-decoration:none; font-weight:600; }
+  .output-row a:hover { text-decoration:underline; }
+  .empty { color:var(--soft); text-align:center; padding:40px 0; }
+  .upload-box {
+    background:var(--card); border:1.5px dashed var(--border); border-radius:12px;
+    padding:18px 24px; margin-bottom:22px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  }
+  .upload-box input[type=file] { font-size:0.85rem; }
+  .upload-box .progress-wrap {
+    flex:1; min-width:180px; height:8px; background:var(--pending-bg); border-radius:999px; overflow:hidden; display:none;
+  }
+  .upload-box .progress-bar { height:100%; width:0%; background:var(--accent); transition:width 0.15s; }
+  .upload-box .upload-msg { font-size:0.82rem; color:var(--soft); }
+  .clear-all-btn { margin-left:auto; background:var(--err); color:#fff; }
+  .clear-all-btn:hover { background:#a02f22; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>影片後製儀表板</h1>
+  <div class="sub">把 input/ 資料夾裡的集數依序跑過各階段。順序建議：轉錄 → 校對字幕（可略過）→ 調整字幕位置（可略過）→ 匹配字幕 → 偵測贅詞 → 確認要剪的 → 套用跳剪 → 套用片頭尾 → 品質檢查 → 翻譯字幕（可略過，需要 GOOGLE_TRANSLATE_API_KEY）。</div>
+
+  <div class="upload-box">
+    <input type="file" id="fileInput" accept=".mp4,.mov,.mkv,.avi,.m4v">
+    <button id="uploadBtn">上傳原始影片</button>
+    <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+    <span class="upload-msg" id="uploadMsg">選擇這台電腦上的影片檔上傳到 input/</span>
+    <button id="clearAllBtn" class="clear-all-btn" title="清空 input/output/work，連原始影片都刪，重新測試用">🗑 清除全部重測</button>
+  </div>
+
+  <div id="episodes"></div>
+</div>
+
+<script>
+const STAGE_LABELS = {
+  transcribed: "轉錄",
+  caption_reviewed: "字幕已校對",
+  style_adjusted: "字幕位置已調整",
+  captioned: "字幕已匹配",
+  filler_detected: "贅詞已偵測",
+  filler_confirmed: "贅詞已確認",
+  jumpcut: "跳剪已套用",
+  final: "片頭尾已套用",
+  qa_done: "品質檢查已跑過",
+};
+
+document.getElementById("uploadBtn").addEventListener("click", () => {
+  const fileInput = document.getElementById("fileInput");
+  const file = fileInput.files[0];
+  const msgEl = document.getElementById("uploadMsg");
+  const progressWrap = document.getElementById("progressWrap");
+  const progressBar = document.getElementById("progressBar");
+
+  if (!file) {
+    msgEl.textContent = "請先選擇檔案";
+    return;
+  }
+
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", `/api/upload?filename=${encodeURIComponent(file.name)}`);
+  progressWrap.style.display = "block";
+  progressBar.style.width = "0%";
+  msgEl.textContent = "上傳中…";
+  document.getElementById("uploadBtn").disabled = true;
+
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      progressBar.style.width = Math.round((e.loaded / e.total) * 100) + "%";
+    }
+  };
+
+  xhr.onload = () => {
+    document.getElementById("uploadBtn").disabled = false;
+    progressWrap.style.display = "none";
+    if (xhr.status === 200) {
+      msgEl.textContent = `已上傳 ${file.name}`;
+      fileInput.value = "";
+      loadEpisodes();
+    } else {
+      msgEl.textContent = "上傳失敗: " + xhr.responseText;
+    }
+  };
+
+  xhr.onerror = () => {
+    document.getElementById("uploadBtn").disabled = false;
+    progressWrap.style.display = "none";
+    msgEl.textContent = "上傳失敗（連線錯誤）";
+  };
+
+  xhr.send(file);
+});
+
+document.getElementById("clearAllBtn").addEventListener("click", async () => {
+  const msgEl = document.getElementById("uploadMsg");
+  const sure = confirm(
+    "確定要清除全部集數重新測試嗎？\n\ninput/、output/、work/ 底下所有東西都會被刪除，包含原始上傳影片，無法復原。"
+  );
+  if (!sure) return;
+
+  const res = await fetch("/api/clear_all", { method: "POST" });
+  if (res.ok) {
+    msgEl.textContent = "已清空，可以重新上傳測試";
+    loadEpisodes();
+  } else {
+    const data = await res.json();
+    msgEl.textContent = "清除失敗: " + (data.error || res.statusText);
+  }
+});
+
+let TRANSLATE_LANGS = [];
+
+async function loadEpisodes() {
+  const res = await fetch("/api/episodes");
+  const episodes = await res.json();
+  const container = document.getElementById("episodes");
+  container.innerHTML = "";
+  if (episodes.length === 0) {
+    container.innerHTML = '<div class="empty">input/ 資料夾裡還沒有影片，把要處理的檔案放進去再重新整理頁面。</div>';
+    return;
+  }
+  for (const ep of episodes) {
+    container.appendChild(renderEpisode(ep));
+  }
+}
+
+async function loadTranslateLangs() {
+  const res = await fetch("/api/config");
+  const data = await res.json();
+  TRANSLATE_LANGS = data.translate_langs || [];
+}
+
+function renderEpisode(ep) {
+  const div = document.createElement("div");
+  div.className = "episode";
+  div.dataset.episode = ep.episode;
+
+  const badges = Object.entries(STAGE_LABELS).map(([key, label]) =>
+    `<span class="badge ${ep[key] ? "done" : ""}">${ep[key] ? "✓ " : ""}${label}</span>`
+  ).join("");
+
+  div.innerHTML = `
+    <div class="episode-header">
+      <h2>${ep.episode}　<span style="font-weight:400;font-size:0.8rem;color:var(--soft)">${ep.video}</span></h2>
+    </div>
+    <div class="badges">${badges}</div>
+    <div class="actions">
+      <button data-action="transcribe" class="${ep.transcribed ? "done" : ""}">① 開始轉錄</button>
+      <button data-action="caption_editor" class="${ep.caption_reviewed ? "done" : ""}">② 校對字幕</button>
+      <button data-action="picker" class="${ep.style_adjusted ? "done" : ""}">③ 調整字幕位置</button>
+      <button data-action="captions" class="${ep.captioned ? "done" : ""}">④ 匹配字幕</button>
+      <button data-action="filler_detect" class="${ep.filler_detected ? "done" : ""}">⑤ 偵測贅詞</button>
+      <button data-action="jumpcut" class="${ep.jumpcut ? "done" : ""}">⑥ 套用跳剪</button>
+      <button data-action="bumper" class="${ep.final ? "done" : ""}">⑦ 套用片頭尾</button>
+      <button data-action="qa" class="${ep.qa_done ? "done" : ""}">⑧ 品質檢查</button>
+      ${TRANSLATE_LANGS.map(lang => `<button data-action="translate" data-lang="${lang}" class="${ep.translated_langs.includes(lang) ? "done" : ""}">⑨ 翻譯（${lang}）</button>`).join("")}
+    </div>
+    <div class="job-msg"></div>
+    <div class="flagged-area"></div>
+    <div class="qa-area"></div>
+    <div class="outputs-container">${renderOutputs(ep)}</div>
+  `;
+
+  div.querySelector('[data-action="transcribe"]').onclick = () => runStage(div, ep.episode, "transcribe");
+  div.querySelector('[data-action="caption_editor"]').onclick = () =>
+    window.open(`/caption_editor.html?episode=${encodeURIComponent(ep.episode)}&video=input/${encodeURIComponent(ep.video)}`, "_blank");
+  div.querySelector('[data-action="picker"]').onclick = () =>
+    window.open(`/picker/index.html?episode=${encodeURIComponent(ep.episode)}&video=input/${encodeURIComponent(ep.video)}`, "_blank");
+  div.querySelector('[data-action="captions"]').onclick = () => runStage(div, ep.episode, "captions");
+  div.querySelector('[data-action="filler_detect"]').onclick = () => runStage(div, ep.episode, "filler_detect");
+  div.querySelector('[data-action="jumpcut"]').onclick = () => runStage(div, ep.episode, "jumpcut");
+  div.querySelector('[data-action="bumper"]').onclick = () => runStage(div, ep.episode, "bumper");
+  div.querySelector('[data-action="qa"]').onclick = () => runStage(div, ep.episode, "qa");
+  div.querySelectorAll('[data-action="translate"]').forEach(btn => {
+    btn.onclick = () => runStage(div, ep.episode, "translate", `&lang=${encodeURIComponent(btn.dataset.lang)}`);
+  });
+
+  if (ep.filler_detected) {
+    loadFlagged(div, ep.episode);
+  }
+  if (ep.qa_done) {
+    loadQaReport(div, ep.episode);
+  }
+
+  return div;
+}
+
+const OUTPUT_VERSIONS = [
+  { key: "captioned", suffix: "captioned", label: "① 字幕版", desc: "已匹配字幕，尚未跳剪/加片頭尾" },
+  { key: "jumpcut", suffix: "jumpcut", label: "② 字幕+跳剪版", desc: "已匹配字幕、已剪除贅詞" },
+  { key: "final", suffix: "final", label: "③ 完整版（最終交付）", desc: "已加片頭尾，可直接交付的版本" },
+];
+
+function renderOutputs(ep) {
+  const rows = OUTPUT_VERSIONS.filter(v => ep[v.key]).map(v => {
+    const file = `${ep.episode}_${v.suffix}.mp4`;
+    const highlight = v.key === "final" ? "output-row final" : "output-row";
+    return `
+      <div class="${highlight}">
+        <span class="output-label">${v.label}</span>
+        <span class="output-desc">${v.desc}</span>
+        <a href="/output/${file}" target="_blank">▶ 播放</a>
+        <a href="/output/${file}" download="${file}">⬇ 下載</a>
+      </div>`;
+  });
+  const srtRows = (ep.translated_langs || []).map(lang => {
+    const file = `${ep.episode}_${lang}.srt`;
+    return `
+      <div class="output-row">
+        <span class="output-label">翻譯字幕（${lang}）</span>
+        <span class="output-desc">時間碼對應翻譯當下最新的輸出版本（若已跳剪/套片頭會自動換算），未燒錄進影片</span>
+        <a href="/output/${file}" download="${file}">⬇ 下載</a>
+      </div>`;
+  });
+  const allRows = rows.concat(srtRows);
+  if (allRows.length === 0) return "";
+  return `<div class="outputs-block"><div class="outputs-title">產出檔案：</div>${allRows.join("")}</div>`;
+}
+
+async function runStage(div, episode, stage, extraQuery = "") {
+  const msgEl = div.querySelector(".job-msg");
+  const buttons = div.querySelectorAll("button");
+  buttons.forEach(b => b.disabled = true);
+  msgEl.className = "job-msg";
+  msgEl.textContent = "排隊中…";
+
+  const res = await fetch(`/api/run/${stage}?episode=${encodeURIComponent(episode)}${extraQuery}`, { method: "POST" });
+  const { job_id } = await res.json();
+
+  const poll = setInterval(async () => {
+    const r = await fetch(`/api/job?id=${job_id}`);
+    const job = await r.json();
+
+    if (job.status === "queued") {
+      msgEl.textContent = job.position > 0 ? `排隊中，前面還有 ${job.position} 個工作` : "排隊中…";
+      return;
+    }
+    if (job.status === "running") {
+      msgEl.textContent = "執行中…";
+      return;
+    }
+
+    clearInterval(poll);
+    buttons.forEach(b => b.disabled = false);
+
+    if (job.status === "error") {
+      msgEl.className = "job-msg err";
+      msgEl.textContent = "失敗: " + job.message;
+      return;
+    }
+
+    if (job.result && job.result.skipped) {
+      msgEl.className = "job-msg skip";
+      msgEl.textContent = "沒有實際套用：" + job.result.reason;
+    } else if (job.result && job.result.warning) {
+      msgEl.className = "job-msg skip";
+      msgEl.textContent = "完成，但請注意：" + job.result.warning;
+    } else {
+      msgEl.className = "job-msg";
+      msgEl.textContent = "完成";
+    }
+    if (stage === "filler_detect") loadFlagged(div, episode);
+    if (stage === "qa") loadQaReport(div, episode);
+    // 重新整理整個列表以更新徽章與輸出連結
+    setTimeout(loadEpisodes, 300);
+  }, 1200);
+}
+
+async function loadFlagged(div, episode) {
+  const res = await fetch(`/api/filler?episode=${encodeURIComponent(episode)}`);
+  const data = await res.json();
+  const area = div.querySelector(".flagged-area");
+
+  if (!data.flagged || data.flagged.length === 0) {
+    area.innerHTML = data.auto_cut && data.auto_cut.length
+      ? `<div class="flagged-list">高信心贅詞 ${data.auto_cut.length} 筆會自動剪，沒有模糊詞需要確認。</div>`
+      : "";
+    return;
+  }
+
+  const items = data.flagged.map((item, idx) => `
+    <div class="flagged-item">
+      <input type="checkbox" data-idx="${idx}">
+      <span class="idx-label">#${idx}</span>
+      <span class="txt">${item.context_before}<b>【${item.word}】</b>${item.context_after}</span>
+    </div>
+  `).join("");
+
+  area.innerHTML = `
+    <div class="flagged-list">
+      <div>模糊詞待確認（勾選要剪除的，不勾就永遠不會被剪）：</div>
+      <div class="batch-select">
+        <button type="button" data-select-all class="secondary">全選</button>
+        <button type="button" data-select-none class="secondary">全不選</button>
+        <span>範圍：第</span>
+        <input type="number" data-range-from min="0" max="${data.flagged.length - 1}" value="0" style="width:52px;">
+        <span>到第</span>
+        <input type="number" data-range-to min="0" max="${data.flagged.length - 1}" value="${data.flagged.length - 1}" style="width:52px;">
+        <span>筆</span>
+        <button type="button" data-select-range class="secondary">選取此範圍</button>
+      </div>
+      ${items}
+      <button data-confirm style="margin-top:8px;">確認送出</button>
+    </div>
+  `;
+
+  const checkboxes = () => area.querySelectorAll('input[type=checkbox]');
+  area.querySelector("[data-select-all]").onclick = () => checkboxes().forEach(cb => cb.checked = true);
+  area.querySelector("[data-select-none]").onclick = () => checkboxes().forEach(cb => cb.checked = false);
+  area.querySelector("[data-select-range]").onclick = () => {
+    const from = Number(area.querySelector("[data-range-from]").value);
+    const to = Number(area.querySelector("[data-range-to]").value);
+    checkboxes().forEach(cb => {
+      const idx = Number(cb.dataset.idx);
+      if (idx >= Math.min(from, to) && idx <= Math.max(from, to)) cb.checked = true;
+    });
+  };
+
+  area.querySelector("[data-confirm]").onclick = async () => {
+    const checked = Array.from(area.querySelectorAll('input[type=checkbox]:checked'))
+      .map(el => Number(el.dataset.idx));
+    await fetch(`/api/filler/confirm?episode=${encodeURIComponent(episode)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approve: checked }),
+    });
+    loadEpisodes();
+  };
+}
+
+async function loadQaReport(div, episode) {
+  const res = await fetch(`/api/qa?episode=${encodeURIComponent(episode)}`);
+  const data = await res.json();
+  const area = div.querySelector(".qa-area");
+
+  if (!data.contact_sheet) {
+    area.innerHTML = "";
+    return;
+  }
+
+  const sheetUrl = `/work/${encodeURIComponent(episode)}/qa_contact_sheet.jpg`;
+  const suspects = data.suspects || [];
+  const aspectWarning = data.aspect_ratio_warning;
+
+  const suspectItems = suspects.map(s => `
+    <div class="flagged-item">
+      <span class="idx-label">${s.start.toFixed(1)}s–${s.end.toFixed(1)}s</span>
+      <span class="txt">${s.text}　<b>（靜音重疊 ${Math.round(s.silence_overlap_ratio * 100)}%）</b></span>
+    </div>
+  `).join("");
+
+  const aspectWarningHtml = aspectWarning ? `
+    <div class="flagged-item" style="border-left-color:var(--err);">
+      <span class="txt">⚠ 畫幅比警示：實際影片是 ${aspectWarning.actual_width}x${aspectWarning.actual_height}
+      （比例 ${aspectWarning.actual_ratio}），跟字幕樣式預設的 ${aspectWarning.expected_width}x${aspectWarning.expected_height}
+      （比例 ${aspectWarning.expected_ratio}）差異明顯，字幕可能被非等比拉伸，建議打開輸出影片親眼確認一下。</span>
+    </div>
+  ` : "";
+
+  area.innerHTML = `
+    <div class="flagged-list">
+      <div>
+        品質檢查結果（來源：${data.source_stage || "?"}，抽幀 ${data.contact_sheet_frames || "?"} 張／
+        ${data.contact_sheet_grid || "?"} 網格）：
+        <a href="${sheetUrl}" target="_blank">開啟抽幀總覽圖 ↗</a>
+      </div>
+      ${aspectWarningHtml}
+      ${data.caption_sync_dropped_events ? `<div class="flagged-item"><span class="txt">ℹ 有 ${data.caption_sync_dropped_events} 句字幕落在跳剪剪掉的區間，這次比對已略過。</span></div>` : ""}
+      ${suspects.length
+        ? `<div style="margin-top:8px;">可疑字幕（字幕時間與靜音區間重疊超過門檻，僅供輔助人工複查，不是絕對判定）：</div>${suspectItems}`
+        : `<div style="margin-top:8px;color:var(--soft);">沒有偵測到可疑字幕（安靜偵測本身可能有誤差，不代表 100% 對準，仍建議打開抽幀總覽圖看一眼）。</div>`}
+    </div>
+  `;
+}
+
+loadTranslateLangs().then(loadEpisodes);
+</script>
+</body>
+</html>

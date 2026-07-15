@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+
+# 每集的原始素材/中間產物/輸出檔——體積大、可由 pipeline 重新產生，不進版控
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep
+work/*
+!work/.gitkeep

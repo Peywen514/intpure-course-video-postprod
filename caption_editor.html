@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>字幕校對</title>
+<style>
+  body { margin:0; background:#1c1b19; color:#eee; font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 1.1rem; font-weight: 600; color:#ccc; margin-bottom:4px; }
+  .hint { color:#999; font-size:0.8rem; margin-bottom:14px; }
+  .stage {
+    position: relative; width: 100%; aspect-ratio: 16/9;
+    background: #000; border-radius: 8px; overflow: hidden; margin-bottom:10px;
+  }
+  video { width: 100%; height:100%; display: block; }
+  .toolbar { display:flex; align-items:center; gap:14px; margin-bottom:12px; font-size:0.85rem; color:#bbb; }
+  .toolbar select {
+    background:#242320; color:#eee; border:1px solid #3a382f; border-radius:6px;
+    padding:4px 8px; font-size:0.85rem;
+  }
+  .teleprompter {
+    height: 240px; overflow-y: auto; scroll-behavior: smooth;
+    border:1px solid #3a382f; border-radius:8px; padding:6px; background:#17160f;
+  }
+  .list { display:flex; flex-direction:column; gap:2px; }
+  .row {
+    display:grid; grid-template-columns: 80px 1fr 30px; gap:8px; align-items:start;
+    padding:8px 10px; border-radius:8px; background:#242320;
+  }
+  .row.passed { opacity:0.42; }
+  .row.edited { background:#2a2712; border-left:3px solid #ffd24a; }
+  .row.active { background:#1c2c42; outline:2px solid #4a90f7; opacity:1; }
+  .row.active.edited { background:#33301a; outline:2px solid #ffd24a; }
+  .row .time {
+    color:#4a90f7; font-size:0.78rem; cursor:pointer; background:none; border:none;
+    text-align:left; padding:4px 0; font-family:inherit;
+  }
+  .row .time:hover { text-decoration:underline; }
+  .row textarea {
+    width:100%; background:#131211; color:#eee; border:1px solid #3a382f; border-radius:6px;
+    padding:6px 8px; font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; font-size:0.9rem;
+    resize:vertical; min-height:2.2em;
+  }
+  .row textarea:focus { outline:1.5px solid #4a90f7; border-color:#4a90f7; }
+  .row-ops { display:flex; flex-direction:column; gap:4px; }
+  .row-ops button {
+    background:#3a382f; color:#ccc; border:none; border-radius:5px;
+    padding:2px 0; font-size:0.85rem; cursor:pointer; line-height:1.4;
+  }
+  .row-ops button:hover:not(:disabled) { background:#4a4839; }
+  .row-ops button:disabled { opacity:0.3; cursor:not-allowed; }
+  button { background:#4a90f7; color:#fff; border:none; border-radius:8px; padding:10px 22px; font-size:0.95rem; cursor:pointer; }
+  button:hover { background:#3a7de0; }
+  button:disabled { background:#3a382f; color:#888; cursor:not-allowed; }
+  .status { color:#8fd39a; font-size:0.85rem; }
+  #autosaveStatus { color:#999; }
+  .floaty {
+    position: fixed; right: 24px; bottom: 90px; width:56px; height:56px; border-radius:50%;
+    font-size:1.4rem; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,0.5); z-index: 20; padding:0;
+  }
+  /* 「儲存校正」等工作按鈕跟播放/暫停鈕放在同一側、疊在它上面，操作動線一致，
+     不用滑鼠一下滑到頁面最下面一下又滑回影片旁邊。 */
+  .floaty-actions {
+    position: fixed; right: 24px; bottom: 158px; z-index: 20;
+    display:flex; flex-direction:column; align-items:flex-end; gap:8px;
+  }
+  .floaty-actions button { box-shadow:0 4px 14px rgba(0,0,0,0.5); white-space:nowrap; }
+  .floaty-actions .status {
+    background:#1c1b19; padding:5px 10px; border-radius:6px; text-align:right; max-width:220px;
+  }
+  .cuts-list {
+    margin-top:10px; border:1px solid #3a382f; border-radius:8px; padding:8px 10px;
+    background:#201a12; font-size:0.82rem;
+  }
+  .cuts-list .cuts-title { color:#e0a94a; margin-bottom:6px; }
+  .cut-item { display:flex; align-items:center; gap:8px; padding:3px 0; color:#ccc; }
+  .cut-item .cut-time { color:#e0a94a; font-size:0.76rem; min-width:96px; }
+  .cut-item .cut-word { flex:1; text-decoration:line-through; color:#a89; }
+  .cut-item button {
+    background:#3a382f; color:#ccc; padding:2px 8px; font-size:0.75rem; border-radius:5px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>字幕校對（<span id="episode-label"></span>）</h1>
+  <div class="hint">點時間戳可以跳到影片該處對照畫面確認內容；語音辨識偶爾會有錯字（例如專業術語誤判），直接修改文字框內容即可。文字太長可以按「✂」分成兩句（把游標點在文字框裡真正要斷開的那個位置再按，會照游標所在的字元位置切，不是按播放頭時間猜；游標不在有效範圍內才會退回用播放頭位置估算），斷錯的兩句可以按「⌃」跟上一句合併。播放時下面提詞窗會自動跟著捲到目前講的那句、對應文字框也會自動取得焦點（游標直接跑進去，不用手動點一下才能打字；如果你最近幾秒內才剛打過字，代表正在專心校對，這時候不會搶焦點），右下角圓鈕或 Ctrl+Space 可以暫停/繼續，不用切回影片本體。聽到贅詞或口誤（例如講錯字自己重講一次）：在文字框裡框選那段文字，按「✂ 剪除選取片段」，文字會直接刪掉，對應的影音片段也會記進跳剪清單一起剪掉。分句/合併/剪除選取片段這三個動作如果做錯了，按「↩ 復原上一步」（或游標不在文字框裡時按 Ctrl+Z）可以退回上一步，可以連續復原多步；文字框裡打字本身的錯字，用瀏覽器內建的 Ctrl+Z 就能復原，跟這個是分開的兩套機制。按「💾 儲存校正」（快捷鍵 Ctrl+S）存檔後會問這集校對是否完成，確認完成會接著問要不要直接跳去下一步「調整字幕位置」。所有編輯動作停手 3 秒會自動背景存檔一次（跟手動存檔存的是同一份檔案），右下角會顯示「已存檔 HH:MM:SS」或「有未存檔的變更…」，就算忘記按存檔、卡住切走或不小心重新整理，最近的進度也不會不見。</div>
+  <div class="stage">
+    <video id="video" controls></video>
+  </div>
+  <div class="toolbar">
+    <label>播放速度
+      <select id="speedSelect">
+        <option value="0.75">0.75x</option>
+        <option value="1" selected>1x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+        <option value="1.75">1.75x</option>
+        <option value="2">2x</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="shadowMode"> 跟讀模式（播完這句自動暫停）</label>
+  </div>
+  <div class="teleprompter" id="teleprompter">
+    <div class="list" id="list"></div>
+  </div>
+  <div class="cuts-list" id="cutsList" style="display:none;">
+    <div class="cuts-title">待剪除的贅詞/口誤片段（存檔後才會真的在跳剪套用）：</div>
+    <div id="cutsItems"></div>
+  </div>
+</div>
+<div class="floaty-actions">
+  <span class="status" id="statusMsg"></span>
+  <span class="status" id="autosaveStatus" title="每停手 3 秒自動存檔一次，跟按「💾 儲存校正」存的是同一份檔案"></span>
+  <button id="undoBtn" title="復原上一次分句/合併/剪除選取片段（快捷鍵 Ctrl+Z，在文字框外按）" disabled>↩ 復原上一步</button>
+  <button id="cutSelectionBtn" title="先在文字框裡框選要刪掉的字，再按這個">✂ 剪除選取片段</button>
+  <button id="saveBtn" title="快捷鍵 Ctrl+S">💾 儲存校正</button>
+</div>
+<button id="pauseBtn" class="floaty" title="暫停/播放（快捷鍵 Ctrl+Space）">⏸</button>
+
+<script>
+const params = new URLSearchParams(location.search);
+const episode = params.get("episode") || "";
+const videoRel = params.get("video") || "";
+document.getElementById("episode-label").textContent = episode;
+
+const video = document.getElementById("video");
+video.src = videoRel;
+
+let segments = [];   // [{id, start, end, text, originalText}]，依 start 排序
+let idCounter = 0;
+let activeId = null;
+let manualCuts = [];  // [{start, end, word}]，使用者框選標記要剪掉的贅詞/口誤
+let lastInputAt = 0;  // 最近一次在文字框裡打字的時間戳，判斷「是不是正在打字」用（見 updateActiveRow）
+
+// ---------- 復原（分句/合併/剪除選取片段）：這三個動作都是直接改 segments/manualCuts
+// 陣列後整批 render() 重建 DOM，textarea 原生的逐字 undo history 會被整個重置歸零，
+// 瀏覽器內建 Ctrl+Z 對這幾個「結構性」動作完全沒用。這裡另外自己記一份操作前的完整
+// 快照堆疊，跟瀏覽器原生 undo（在文字框裡打字時仍然正常運作，兩者不衝突）分開處理。
+// ---------- ----------
+let history = [];
+const MAX_HISTORY = 30;
+
+function pushHistory() {
+  history.push({
+    segments: segments.map(s => ({ ...s })),
+    manualCuts: manualCuts.map(c => ({ ...c })),
+  });
+  if (history.length > MAX_HISTORY) history.shift(); // 避免無限累積，只留最近 30 步
+  updateUndoBtn();
+}
+
+function undo() {
+  if (!history.length) return;
+  const prev = history.pop();
+  segments = prev.segments;
+  manualCuts = prev.manualCuts;
+  markDirty();
+  render();
+  renderCutsList();
+  updateUndoBtn();
+}
+
+function updateUndoBtn() {
+  const btn = document.getElementById("undoBtn");
+  if (btn) btn.disabled = history.length === 0;
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = (s % 60).toFixed(1);
+  return `${m}:${sec.padStart(4, "0")}`;
+}
+
+function updateActiveRow() {
+  if (!segments.length) return;
+  const t = video.currentTime;
+  let found = null;
+  for (const seg of segments) {
+    if (t >= seg.start && t < seg.end) { found = seg.id; break; }
+  }
+  if (found === null) {
+    for (const seg of segments) {
+      if (seg.start <= t) found = seg.id;
+      else break;
+    }
+  }
+  if (found === activeId) return;
+  activeId = found;
+
+  const activeIndex = segments.findIndex(s => s.id === activeId);
+  document.querySelectorAll(".row").forEach(r => {
+    const idx = segments.findIndex(s => String(s.id) === r.dataset.id);
+    r.classList.remove("active");
+    r.classList.toggle("passed", activeIndex !== -1 && idx < activeIndex);
+  });
+  if (activeId === null) return;
+  const row = document.querySelector(`.row[data-id="${activeId}"]`);
+  if (!row) return;
+  row.classList.add("active");
+  row.classList.remove("passed");
+
+  // 影片播到哪句，對應的文字框自動取得焦點（游標直接跑進去，不用手動點一下才能打字）。
+  // 但如果使用者「最近幾秒內」才剛打過字（不管是不是這一格），代表正在專心校對，
+  // 這時候搶焦點/硬捲動反而會把打字打到一半的游標拉走，所以用時間窗保護：
+  // 3 秒內有打字紀錄就先不動，等使用者停下來（例如打完這句、想繼續看下一句）才跳過去。
+  const recentlyTyped = Date.now() - lastInputAt < 3000;
+  if (recentlyTyped) return;
+
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  const ta = row.querySelector("textarea");
+  if (ta) {
+    ta.focus();
+    const len = ta.value.length;
+    ta.setSelectionRange(len, len); // 游標放在文字最後面，接著打字就是自然接續校正
+  }
+}
+
+video.addEventListener("timeupdate", updateActiveRow);
+video.addEventListener("seeked", updateActiveRow);
+
+function splitRow(id, cursorPos) {
+  const i = segments.findIndex(s => s.id === id);
+  if (i === -1) return;
+  const seg = segments[i];
+  const text = seg.text;
+  if (text.trim().length < 2) return; // 太短不給分
+
+  // 分割點優先用文字框裡游標實際所在的字元位置（cursorPos，由呼叫端在按下✂當下傳入）——
+  // 使用者是在看文字決定要斷在哪，用文字游標位置直接對應文字內容，比原本「猜播放頭在
+  // 整句時間範圍裡的比例、再換算回字元位置」準得多，也不會有「聽起來差不多但實際字元數
+  // 差好幾個字」的落差。沒有有效游標位置（例如透過鍵盤觸發、或游標剛好停在頭尾邊界）
+  // 才退回原本「播放頭時間比例」的邏輯當 fallback，找不到播放頭資訊最後退回正中間對半。
+  let splitPos;
+  if (typeof cursorPos === "number" && cursorPos > 0 && cursorPos < text.length) {
+    splitPos = cursorPos;
+  } else {
+    const t = video.currentTime;
+    const inRange = t > seg.start && t < seg.end;
+    const splitTime = inRange ? t : (seg.start + seg.end) / 2;
+    const ratio = (splitTime - seg.start) / (seg.end - seg.start);
+    splitPos = Math.min(text.length - 1, Math.max(1, Math.round(text.length * ratio)));
+  }
+
+  // 時間範圍反過來用「字元位置在文字總長度裡的比例」去對應回時間軸（跟「框選文字剪除」
+  // 用的是同一種手法），splitPos 現在是可信的依據來源，時間才是用它換算出來的近似值。
+  const timeRatio = splitPos / text.length;
+  const splitTime = seg.start + (seg.end - seg.start) * timeRatio;
+
+  pushHistory();
+  markDirty();
+  const before = { id: idCounter++, start: seg.start, end: splitTime, text: text.slice(0, splitPos) };
+  const after = { id: idCounter++, start: splitTime, end: seg.end, text: text.slice(splitPos) };
+  segments.splice(i, 1, before, after);
+  render();
+}
+
+function mergeUp(id) {
+  const i = segments.findIndex(s => s.id === id);
+  if (i <= 0) return;
+  const prev = segments[i - 1];
+  const cur = segments[i];
+  const merged = { id: idCounter++, start: prev.start, end: cur.end, text: prev.text + cur.text };
+  pushHistory();
+  markDirty();
+  segments.splice(i - 1, 2, merged);
+  render();
+}
+
+function render() {
+  const list = document.getElementById("list");
+  list.innerHTML = segments.map((seg, i) => {
+    const edited = seg.originalText !== undefined && seg.text !== seg.originalText;
+    return `
+      <div class="row ${edited ? "edited" : ""}" data-id="${seg.id}">
+        <button class="time" data-seek="${seg.start}">${fmtTime(seg.start)}</button>
+        <textarea data-id="${seg.id}" rows="1">${seg.text}</textarea>
+        <div class="row-ops">
+          <button type="button" data-merge="${seg.id}" title="跟上一句合併" ${i === 0 ? "disabled" : ""}>⌃</button>
+          <button type="button" data-split="${seg.id}" title="分成兩句">✂</button>
+        </div>
+      </div>`;
+  }).join("");
+
+  list.querySelectorAll("[data-seek]").forEach(btn => {
+    btn.onclick = () => {
+      // 不能只靠瀏覽器的 seeked 事件觸發高亮更新——那是非同步的，偶爾會跟緊接著的
+      // timeupdate（可能還是舊時間點）搶著跑，導致點了卻沒立刻反映在畫面上（看起來
+      // 像沒跳過去）。這裡點擊當下就同步呼叫 updateActiveRow()，不等事件。
+      video.currentTime = Number(btn.dataset.seek);
+      video.play();
+      updateActiveRow();
+    };
+  });
+  list.querySelectorAll("textarea").forEach(ta => {
+    ta.oninput = () => {
+      lastInputAt = Date.now();
+      markDirty();
+      const seg = segments.find(s => String(s.id) === ta.dataset.id);
+      if (!seg) return;
+      seg.text = ta.value;
+      ta.closest(".row").classList.toggle("edited", seg.originalText !== undefined && seg.text !== seg.originalText);
+    };
+  });
+  list.querySelectorAll("[data-merge]").forEach(btn => {
+    btn.onclick = () => mergeUp(Number(btn.dataset.merge));
+  });
+  list.querySelectorAll("[data-split]").forEach(btn => {
+    btn.onclick = () => {
+      // 直接讀該行 textarea 自己的 selectionStart，不透過 document.activeElement——
+      // 按鈕 mousedown 當下就會把焦點從文字框搶走，但 selectionStart/End 是留在
+      // textarea 元素自己身上的屬性，就算焦點被搶走了數值還是讀得到，不受影響。
+      const ta = btn.closest(".row").querySelector("textarea");
+      splitRow(Number(btn.dataset.split), ta ? ta.selectionStart : undefined);
+    };
+  });
+}
+
+async function load() {
+  const res = await fetch(`/api/events?episode=${encodeURIComponent(episode)}`);
+  const data = await res.json();
+  if (data.error) {
+    document.getElementById("list").innerHTML = `<div style="color:#e88">${data.error}</div>`;
+    return;
+  }
+  const corrections = data.corrections || {};
+  segments = data.events.map(ev => {
+    const text = corrections[ev.index] !== undefined ? corrections[ev.index] : ev.text;
+    idCounter = Math.max(idCounter, ev.index + 1);
+    return { id: ev.index, start: ev.start, end: ev.end, text, originalText: ev.text };
+  });
+  manualCuts = data.manual_cuts || [];
+  render();
+  renderCutsList();
+}
+
+// ---------- 自動暫存：分句/合併/剪除選取片段/打字校正都直接寫進 segments/manualCuts
+// 陣列，只存在瀏覽器分頁的記憶體裡，在使用者按「💾 儲存校正」之前完全不會落地存檔——
+// 這段期間如果卡住、當機、不小心切回主畫面重新整理，全部進度都會不見，之前就真的發生過。
+// 這裡另外加一條「背景自動存檔」路徑，寫進的是跟手動存檔同一份檔案（segments_override.json/
+// manual_cuts.json，pipeline 本來就是讀這份），不是另外一份「草稿」——不額外維護草稿跟
+// 正式版兩份檔案互相同步/衝突的問題，自動存檔就是「更常存」，不是「存到別的地方」。
+// 手動按鈕額外做的事只有「跳出完成確認 + 問要不要接下一步」這個收尾流程。 ---------- ----------
+let dirty = false;
+let autosaveTimer = null;
+let lastSavedAt = null;
+
+function markDirty() {
+  dirty = true;
+  updateSaveStatus();
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(persistDraft, 3000); // 停手 3 秒沒有新動作才存，避免每個字都打一次 API
+}
+
+async function persistDraft() {
+  const payload = segments
+    .slice()
+    .sort((a, b) => a.start - b.start)
+    .map(s => ({ start: s.start, end: s.end, text: s.text }));
+  await fetch(`/api/captions/save_segments?episode=${encodeURIComponent(episode)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ segments: payload }),
+  });
+  await fetch(`/api/captions/save_manual_cuts?episode=${encodeURIComponent(episode)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cuts: manualCuts }),
+  });
+  dirty = false;
+  lastSavedAt = new Date();
+  updateSaveStatus();
+  return payload;
+}
+
+function updateSaveStatus() {
+  const el = document.getElementById("autosaveStatus");
+  if (!el) return;
+  if (dirty) {
+    el.textContent = "有未存檔的變更…";
+  } else if (lastSavedAt) {
+    const hh = String(lastSavedAt.getHours()).padStart(2, "0");
+    const mm = String(lastSavedAt.getMinutes()).padStart(2, "0");
+    const ss = String(lastSavedAt.getSeconds()).padStart(2, "0");
+    el.textContent = `已存檔 ${hh}:${mm}:${ss}`;
+  }
+}
+
+// 切分頁/關分頁/重新整理前的最後防線：pagehide 比 beforeunload 更可靠會被觸發，
+// 用 sendBeacon 是因為這時候頁面正在關閉，一般的 fetch 常常來不及送出就被瀏覽器砍掉，
+// sendBeacon 是瀏覽器保證會在背景送完的機制，專門設計給這種情境用。
+window.addEventListener("pagehide", () => {
+  if (!dirty) return;
+  const payload = segments
+    .slice()
+    .sort((a, b) => a.start - b.start)
+    .map(s => ({ start: s.start, end: s.end, text: s.text }));
+  navigator.sendBeacon(
+    `/api/captions/save_segments?episode=${encodeURIComponent(episode)}`,
+    new Blob([JSON.stringify({ segments: payload })], { type: "application/json" })
+  );
+  navigator.sendBeacon(
+    `/api/captions/save_manual_cuts?episode=${encodeURIComponent(episode)}`,
+    new Blob([JSON.stringify({ cuts: manualCuts })], { type: "application/json" })
+  );
+});
+
+async function manualSave() {
+  const statusMsg = document.getElementById("statusMsg");
+  clearTimeout(autosaveTimer); // 手動存檔了，不需要待會兒背景那次自動存檔再跑一次
+  const payload = await persistDraft();
+  statusMsg.textContent = manualCuts.length
+    ? `已儲存 ${payload.length} 句字幕、${manualCuts.length} 段待剪除片段，下次匹配字幕/跳剪會套用`
+    : `已儲存 ${payload.length} 句字幕，下次匹配字幕會套用`;
+  setTimeout(() => statusMsg.textContent = "", 4000);
+
+  // 存檔後問一次「這集校對完成了嗎」，確認完成才接著問要不要直接接續下一步「調整字幕
+  // 位置」，避免存完檔就結束在這頁、忘記還有下一步要做，或跳去別的分頁後找不回來。
+  const confirmedDone = confirm("已儲存校正。確認這一集的字幕校對完成了嗎？");
+  if (!confirmedDone) return;
+  const goNext = confirm("要接著進行下一步「調整字幕位置」嗎？");
+  if (goNext) {
+    const videoFilename = videoRel.replace(/^input\//, "");
+    window.open(`/picker/index.html?episode=${encodeURIComponent(episode)}&video=input/${encodeURIComponent(videoFilename)}`, "_blank");
+  }
+}
+
+document.getElementById("saveBtn").addEventListener("click", manualSave);
+
+// ---------- 框選文字剪除贅詞/口誤：把選取範圍在該句總長度裡的字元位置比例，反推回
+// 該句的時間範圍（跟分句✂用的是同一種手法），文字直接從框裡刪掉，時間範圍記進
+// manualCuts，存檔後 stage_jumpcut 會連影音片段一起剪掉。 ----------
+// mousedown 階段就 preventDefault：按鈕預設會在 mousedown 當下把焦點從文字框搶走，
+// 等 click 事件真正觸發時 document.activeElement 已經變成按鈕本身、不是文字框，
+// 框選範圍讀不到，永遠誤判成「沒框選」。擋掉這個預設搶焦點行為，文字框在點擊當下
+// 才會維持 focus，selectionStart/End 才讀得到使用者實際框選的範圍。
+document.getElementById("cutSelectionBtn").addEventListener("mousedown", (e) => {
+  e.preventDefault();
+});
+document.getElementById("cutSelectionBtn").addEventListener("click", () => {
+  const ta = document.activeElement;
+  if (!ta || ta.tagName !== "TEXTAREA" || !ta.dataset.id) {
+    alert("請先在字幕文字框裡框選要剪掉的字，再按這個按鈕");
+    return;
+  }
+  const selStart = ta.selectionStart, selEnd = ta.selectionEnd;
+  if (selStart === selEnd) {
+    alert("請先框選要剪掉的文字範圍");
+    return;
+  }
+  const seg = segments.find(s => String(s.id) === ta.dataset.id);
+  if (!seg) return;
+
+  const text = seg.text;
+  const dur = seg.end - seg.start;
+  const cutStart = seg.start + dur * (selStart / text.length);
+  const cutEnd = seg.start + dur * (selEnd / text.length);
+  const word = text.slice(selStart, selEnd);
+
+  pushHistory();
+  markDirty();
+  manualCuts.push({ start: cutStart, end: cutEnd, word });
+  seg.text = text.slice(0, selStart) + text.slice(selEnd);
+
+  render();
+  renderCutsList();
+});
+
+function renderCutsList() {
+  const box = document.getElementById("cutsList");
+  const items = document.getElementById("cutsItems");
+  if (!manualCuts.length) {
+    box.style.display = "none";
+    items.innerHTML = "";
+    return;
+  }
+  box.style.display = "block";
+  items.innerHTML = manualCuts.map((c, i) => `
+    <div class="cut-item">
+      <span class="cut-time">${fmtTime(c.start)}–${fmtTime(c.end)}</span>
+      <span class="cut-word">${c.word}</span>
+      <button type="button" data-preview-cut="${i}" title="播剪接點前後，聽聽看接不接得順">▶ 試聽</button>
+      <button type="button" data-remove-cut="${i}">取消</button>
+    </div>
+  `).join("");
+  items.querySelectorAll("[data-remove-cut]").forEach(btn => {
+    btn.onclick = () => {
+      manualCuts.splice(Number(btn.dataset.removeCut), 1);
+      markDirty();
+      renderCutsList();
+    };
+  });
+  items.querySelectorAll("[data-preview-cut]").forEach(btn => {
+    btn.onclick = () => previewCut(manualCuts[Number(btn.dataset.previewCut)]);
+  });
+}
+
+// ---------- 試聽剪接效果：不用真的跑完整條跳剪流程產出檔案，直接在瀏覽器裡土法
+// 模擬「剪掉這段之後接起來的樣子」——從剪接點前 1.5 秒開始播，一播到剪接點的
+// start，立刻跳到 end 接著播，播到 end 後 1.5 秒自動停。概念借鏡 Audapolis 那種
+// 「刪文字＝刪音訊、立刻聽得到結果」的即時回饋，差別是我們沒有真的把音軌剪開存新檔，
+// 只是播放時動態跳過那一段，讓使用者確認自然不自然，滿意了再存檔正式套用跳剪。
+// ---------- ----------
+let previewTickHandler = null; // 記住目前掛著的監聽器，才能在下一次試聽時真的移除掉上一個
+function previewCut(cut) {
+  if (previewTickHandler) {
+    video.removeEventListener("timeupdate", previewTickHandler); // 移除上一次試聽殘留的監聽器
+  }
+
+  const lead = 1.5, tail = 1.5;
+  const previewStart = Math.max(0, cut.start - lead);
+  const previewEnd = cut.end + tail;
+  let jumped = false;
+
+  previewTickHandler = () => {
+    if (!jumped && video.currentTime >= cut.start) {
+      jumped = true;
+      video.currentTime = cut.end;
+      return; // 剪接後的時間點交給下一次 timeupdate 判斷是否已經播完 tail
+    }
+    if (jumped && video.currentTime >= previewEnd) {
+      video.pause();
+      video.removeEventListener("timeupdate", previewTickHandler);
+      previewTickHandler = null;
+    }
+  };
+  video.addEventListener("timeupdate", previewTickHandler);
+  video.currentTime = previewStart;
+  video.play();
+  updateActiveRow();
+}
+
+// ---------- 播放速度 ----------
+document.getElementById("speedSelect").addEventListener("change", (e) => {
+  video.playbackRate = parseFloat(e.target.value);
+});
+
+// ---------- 暫停鍵：右下角圓鈕 + Ctrl+Space（打字中也能用，不用切回影片本體） ----------
+const pauseBtn = document.getElementById("pauseBtn");
+function syncPauseBtn() {
+  pauseBtn.textContent = video.paused ? "▶" : "⏸";
+}
+pauseBtn.addEventListener("click", () => {
+  if (video.paused) video.play(); else video.pause();
+});
+video.addEventListener("play", syncPauseBtn);
+video.addEventListener("pause", syncPauseBtn);
+syncPauseBtn();
+
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && e.ctrlKey) {
+    e.preventDefault();
+    if (video.paused) video.play(); else video.pause();
+  }
+  // Ctrl+Z 復原分句/合併/剪除選取片段：只在焦點「不在」文字框裡才接管，文字框裡打字時
+  // 讓瀏覽器原生的逐字 undo 照常運作（那個處理的是打字內容本身，跟這裡復原的「結構性
+  // 動作」是兩回事，見 pushHistory() 開頭的說明），兩者不會互相搶。
+  if ((e.key === "z" || e.key === "Z") && e.ctrlKey && e.target.tagName !== "TEXTAREA") {
+    e.preventDefault();
+    undo();
+  }
+  // Ctrl+S 快捷存檔：不管游標在不在文字框裡都接管（跟 Ctrl+Z 不同，瀏覽器原生的
+  // Ctrl+S 是跳出「另存新檔」網頁存檔對話框，這裡完全用不到，直接攔下來換成儲存校正）。
+  if ((e.key === "s" || e.key === "S") && e.ctrlKey) {
+    e.preventDefault();
+    manualSave();
+  }
+});
+
+document.getElementById("undoBtn").addEventListener("click", undo);
+
+// ---------- 跟讀模式：播完目前這句自動暫停（像 VoiceTube 那種一句一句練習的節奏），
+// 不用自己盯著畫面手動按暫停。用 timeupdate 逐格檢查是否已經到了目前這句的結尾，
+// 提前一點點（50ms）觸發，避免播過頭卡到下一句的音才暫停。 ----------
+const shadowModeEl = document.getElementById("shadowMode");
+video.addEventListener("timeupdate", () => {
+  if (!shadowModeEl.checked || video.paused) return;
+  const seg = segments.find(s => s.id === activeId);
+  if (seg && video.currentTime >= seg.end - 0.05) {
+    video.pause();
+  }
+});
+
+// ---------- 滑鼠滾輪切換上一句/下一句：滾輪往上＝上一句，往下＝下一句，取代在
+// 提詞窗裡手動捲動找那一行（提詞窗本來就會自動跟播捲動，手動捲反而沒什麼用途，
+// 這裡直接把滾輪重新定義成「換句」比較符合這個頁面的操作邏輯）。
+// 用一個短暫的節流鎖，避免滾輪滾一下觸發好幾次跳句（尤其觸控板一次滾動會連發很多個
+// wheel 事件）。跟讀模式開著的話，換到新句子直接接著播；沒開就只是跳過去，播放狀態不變。
+// ---------- ----------
+let wheelLocked = false;
+document.getElementById("teleprompter").addEventListener("wheel", (e) => {
+  e.preventDefault();
+  if (wheelLocked || !segments.length) return;
+  wheelLocked = true;
+  setTimeout(() => { wheelLocked = false; }, 350);
+
+  const curIdx = segments.findIndex(s => s.id === activeId);
+  const baseIdx = curIdx === -1 ? 0 : curIdx;
+  const nextIdx = Math.min(segments.length - 1, Math.max(0, baseIdx + (e.deltaY > 0 ? 1 : -1)));
+  const seg = segments[nextIdx];
+  video.currentTime = seg.start;
+  if (shadowModeEl.checked) video.play();
+  updateActiveRow();
+}, { passive: false });
+
+load();
+</script>
+</body>
+</html>
