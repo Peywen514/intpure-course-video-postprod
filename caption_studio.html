@@ -86,20 +86,27 @@
   button { background:#4a90f7; color:#fff; border:none; border-radius:8px; padding:10px 22px; font-size:0.95rem; cursor:pointer; }
   button:hover { background:#3a7de0; }
   button:disabled { background:#3a382f; color:#888; cursor:not-allowed; }
+  #applyBtn { background:#1e7d42; }
+  #applyBtn:hover { background:#186b38; }
   .status { color:#8fd39a; font-size:0.85rem; }
   #autosaveStatus { color:#999; }
   .floaty {
-    position: fixed; right: 24px; bottom: 90px; width:56px; height:56px; border-radius:50%;
-    font-size:1.4rem; display:flex; align-items:center; justify-content:center;
+    position: fixed; right: 24px; bottom: 24px; width:52px; height:52px; border-radius:50%;
+    font-size:1.3rem; display:flex; align-items:center; justify-content:center;
     box-shadow:0 4px 14px rgba(0,0,0,0.5); z-index: 20; padding:0;
   }
   .floaty-actions {
-    position: fixed; right: 24px; bottom: 158px; z-index: 20;
-    display:flex; flex-direction:column; align-items:flex-end; gap:8px;
+    position: fixed; right: 24px; bottom: 90px; z-index: 20;
+    display:flex; flex-direction:column; align-items:flex-end; gap:10px;
   }
-  .floaty-actions button { box-shadow:0 4px 14px rgba(0,0,0,0.5); white-space:nowrap; }
+  .floaty-actions button {
+    width:52px; height:52px; border-radius:50%; font-size:1.3rem; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,0.5);
+  }
   .floaty-actions .status {
-    background:#1c1b19; padding:5px 10px; border-radius:6px; text-align:right; max-width:220px;
+    background:#1c1b19; padding:4px 9px; border-radius:6px; text-align:right;
+    max-width:220px; align-self:flex-end; font-size:0.72rem;
   }
   .cuts-list {
     margin-top:10px; border:1px solid #3a382f; border-radius:8px; padding:8px 10px;
@@ -110,7 +117,8 @@
   .cut-item .cut-time { color:#e0a94a; font-size:0.76rem; min-width:96px; }
   .cut-item .cut-word { flex:1; text-decoration:line-through; color:#a89; }
   .cut-item button {
-    background:#3a382f; color:#ccc; padding:2px 8px; font-size:0.75rem; border-radius:5px;
+    background:#3a382f; color:#ccc; width:26px; height:26px; padding:0; font-size:0.8rem;
+    border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
   }
 </style>
 </head>
@@ -165,10 +173,10 @@
 <div class="floaty-actions">
   <span class="status" id="statusMsg"></span>
   <span class="status" id="autosaveStatus" title="每停手 3 秒自動存檔一次（文字/位置/樣式都算）"></span>
-  <button id="undoBtn" title="復原上一次分句/合併/剪除選取片段（快捷鍵 Ctrl+Z，在文字框外按）" disabled>↩ 復原上一步</button>
-  <button id="cutSelectionBtn" title="先在文字框裡框選要刪掉的字，再按這個">✂ 剪除選取片段</button>
-  <button id="saveBtn" title="快捷鍵 Ctrl+S">💾 儲存</button>
-  <button id="applyBtn" title="存檔並重新燒錄字幕到影片">▶ 套用字幕</button>
+  <button id="undoBtn" title="復原上一步：復原上一次分句/合併/剪除選取片段（快捷鍵 Ctrl+Z，在文字框外按）" disabled>↩</button>
+  <button id="cutSelectionBtn" title="剪除選取片段：先在文字框裡框選要刪掉的字，再按這個">✂</button>
+  <button id="saveBtn" title="儲存（快捷鍵 Ctrl+S）">💾</button>
+  <button id="applyBtn" title="套用字幕：存檔並重新燒錄字幕到影片">▶</button>
 </div>
 <button id="pauseBtn" class="floaty" title="暫停/播放（快捷鍵 Ctrl+Space）">⏸</button>
 
@@ -645,8 +653,8 @@ function renderCutsList() {
     <div class="cut-item">
       <span class="cut-time">${fmtTime(c.start)}–${fmtTime(c.end)}</span>
       <span class="cut-word">${c.word}</span>
-      <button type="button" data-preview-cut="${i}" title="播剪接點前後，聽聽看接不接得順">▶ 試聽</button>
-      <button type="button" data-remove-cut="${i}">取消</button>
+      <button type="button" data-preview-cut="${i}" title="試聽：播剪接點前後，聽聽看接不接得順">▶</button>
+      <button type="button" data-remove-cut="${i}" title="取消這段剪除標記">✕</button>
     </div>
   `).join("");
   items.querySelectorAll("[data-remove-cut]").forEach(btn => {
