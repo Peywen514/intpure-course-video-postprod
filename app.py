@@ -64,14 +64,18 @@ JOBS_LOCK = threading.Lock()
 JOB_QUEUE = queue.Queue()
 JOB_ORDER_LOCK = threading.Lock()
 JOB_ORDER = []  # 依排隊順序的 job_id，最前面那個是正在跑或即將跑的
+MAX_QUEUED_JOBS = 3  # 公司 OA 機器規格有限，同時排隊工作數上限，超過要請使用者等前面跑完
 
 
 def start_job(fn, *args, **kwargs):
-    job_id = uuid.uuid4().hex[:8]
+    """回傳 job_id；佇列（含正在跑的那個）已達 MAX_QUEUED_JOBS 上限時回傳 None。"""
+    with JOB_ORDER_LOCK:
+        if len(JOB_ORDER) >= MAX_QUEUED_JOBS:
+            return None
+        job_id = uuid.uuid4().hex[:8]
+        JOB_ORDER.append(job_id)
     with JOBS_LOCK:
         JOBS[job_id] = {"status": "queued", "message": "", "result": None}
-    with JOB_ORDER_LOCK:
-        JOB_ORDER.append(job_id)
     JOB_QUEUE.put((job_id, fn, args, kwargs))
     return job_id
 
@@ -236,34 +240,27 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         episode = qs.get("episode", [""])[0]
 
         if parsed.path == "/api/run/transcribe":
-            job_id = start_job(stage_transcribe, episode)
-            return self._send_json({"job_id": job_id})
+            return self._start_job_response(stage_transcribe, episode)
 
         if parsed.path == "/api/run/captions":
-            job_id = start_job(stage_captions, episode)
-            return self._send_json({"job_id": job_id})
+            return self._start_job_response(stage_captions, episode)
 
         if parsed.path == "/api/run/filler_detect":
-            job_id = start_job(stage_filler_detect, episode)
-            return self._send_json({"job_id": job_id})
+            return self._start_job_response(stage_filler_detect, episode)
 
         if parsed.path == "/api/run/jumpcut":
-            job_id = start_job(stage_jumpcut, episode)
-            return self._send_json({"job_id": job_id})
+            return self._start_job_response(stage_jumpcut, episode)
 
         if parsed.path == "/api/run/bumper":
             brand = qs.get("brand", [DEFAULT_BRAND])[0]
-            job_id = start_job(stage_bumper, episode, brand)
-            return self._send_json({"job_id": job_id})
+            return self._start_job_response(stage_bumper, episode, brand)
 
         if parsed.path == "/api/run/qa":  # ⑧ 品質檢查：一樣走 start_job 進佇列排隊
-            job_id = start_job(stage_qa, episode)
-            return self._send_json({"job_id": job_id})
+            return self._start_job_response(stage_qa, episode)
 
         if parsed.path == "/api/run/translate":  # ⑨ 字幕翻譯，lang 沒帶就用第一個設定值
             lang = qs.get("lang", [TRANSLATE_TARGET_LANGS[0]])[0]
-            job_id = start_job(stage_translate, episode, lang)
-            return self._send_json({"job_id": job_id})
+            return self._start_job_response(stage_translate, episode, lang)
 
         # B-Roll 規劃階段（尚未接生成引擎、尚無儀表板 UI，先開 API 供之後的標記工具呼叫）
         if parsed.path == "/api/broll/save_markers":
@@ -272,12 +269,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return self._send_json({"ok": True})
 
         if parsed.path == "/api/run/broll_plan":
-            job_id = start_job(stage_broll_plan, episode)
-            return self._send_json({"job_id": job_id})
+            return self._start_job_response(stage_broll_plan, episode)
 
         if parsed.path == "/api/run/broll_generate":  # 實際去 Pexels 搜尋下載素材
-            job_id = start_job(stage_broll_generate, episode)
-            return self._send_json({"job_id": job_id})
+            return self._start_job_response(stage_broll_generate, episode)
 
         if parsed.path == "/api/filler/confirm":
             body = self._read_json_body()
@@ -370,6 +365,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             data = json.loads(transcript_path.read_text(encoding="utf-8"))
             state["words"] = data.get("words", [])
         return state
+
+    def _start_job_response(self, fn, *args, **kwargs):
+        job_id = start_job(fn, *args, **kwargs)
+        if job_id is None:
+            return self._send_json(
+                {"error": f"目前已有 {MAX_QUEUED_JOBS} 個工作在排隊/執行中，等前面跑完再試"},
+                status=409,
+            )
+        return self._send_json({"job_id": job_id})
 
     def _read_json_body(self):
         length = int(self.headers.get("Content-Length", 0))

@@ -54,7 +54,7 @@ def list_episodes():
     """掃 input/ 底下的影片，回傳每集的名稱與各階段完成狀態。"""
     episodes = {}
     for f in sorted(INPUT_DIR.glob("*")):
-        if not f.is_file():
+        if not f.is_file() or f.name.startswith("."):
             continue
         ep = episode_name_from_filename(f.name)
         episodes.setdefault(ep, {"episode": ep, "video": f.name})

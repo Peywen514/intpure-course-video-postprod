@@ -588,7 +588,13 @@ async function applyCaptions() {
   statusMsg.textContent = "排隊中…";
 
   const res = await fetch(`/api/run/captions?episode=${encodeURIComponent(episode)}`, { method: "POST" });
-  const { job_id } = await res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    applyBtn.disabled = false;
+    statusMsg.textContent = data.error || "無法送出工作";
+    return;
+  }
+  const { job_id } = data;
   const poll = setInterval(async () => {
     const r = await fetch(`/api/job?id=${job_id}`);
     const job = await r.json();

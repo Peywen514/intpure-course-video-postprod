@@ -11,12 +11,33 @@
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; }
-  .wrap { max-width: 980px; margin:0 auto; padding:32px 20px 80px; }
+  .wrap { max-width: 1180px; margin:0 auto; padding:32px 20px 80px; }
   h1 { font-size:1.4rem; margin-bottom:4px; }
   .sub { color:var(--soft); margin-bottom:24px; font-size:0.9rem; }
-  .episode {
-    background:var(--card); border:1px solid var(--border); border-radius:12px;
-    padding:20px 24px; margin-bottom:18px;
+
+  .layout { display:flex; gap:20px; align-items:flex-start; }
+  .sidebar {
+    width:260px; flex-shrink:0; background:var(--card); border:1px solid var(--border);
+    border-radius:12px; overflow:hidden;
+  }
+  .sidebar-item {
+    padding:12px 14px; cursor:pointer; border-bottom:1px solid var(--border);
+  }
+  .sidebar-item:last-child { border-bottom:none; }
+  .sidebar-item:hover { background:var(--pending-bg); }
+  .sidebar-item.active { background:var(--accent-soft); box-shadow:inset 3px 0 0 var(--accent); }
+  .sidebar-item .name { font-weight:600; font-size:0.92rem; overflow-wrap:anywhere; }
+  .sidebar-item .progress-text { font-size:0.72rem; color:var(--soft); margin-top:4px; }
+  .sidebar-item .progress-bar-wrap {
+    height:4px; background:var(--pending-bg); border-radius:999px; overflow:hidden; margin-top:5px;
+  }
+  .sidebar-item .progress-bar-fill { height:100%; background:var(--accent); }
+  .sidebar-item.active .progress-bar-fill { background:var(--ok); }
+  .sidebar-empty { padding:16px 14px; color:var(--soft); font-size:0.85rem; }
+
+  .detail {
+    flex:1; min-width:0; background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:20px 24px;
   }
   .episode-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
   .episode-header h2 { font-size:1.1rem; margin:0; }
@@ -86,7 +107,10 @@
     <button id="clearAllBtn" class="clear-all-btn" title="清空 input/output/work，連原始影片都刪，重新測試用">🗑 清除全部重測</button>
   </div>
 
-  <div id="episodes"></div>
+  <div class="layout">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="detail" id="detail"></div>
+  </div>
 </div>
 
 <script>
@@ -166,19 +190,26 @@ document.getElementById("clearAllBtn").addEventListener("click", async () => {
 });
 
 let TRANSLATE_LANGS = [];
+let EPISODES = [];
+let selectedEpisode = null;
 
 async function loadEpisodes() {
   const res = await fetch("/api/episodes");
-  const episodes = await res.json();
-  const container = document.getElementById("episodes");
-  container.innerHTML = "";
-  if (episodes.length === 0) {
-    container.innerHTML = '<div class="empty">input/ 資料夾裡還沒有影片，把要處理的檔案放進去再重新整理頁面。</div>';
+  EPISODES = await res.json();
+
+  if (EPISODES.length === 0) {
+    document.getElementById("sidebar").innerHTML = '<div class="sidebar-empty">還沒有影片</div>';
+    document.getElementById("detail").innerHTML = '<div class="empty">input/ 資料夾裡還沒有影片，把要處理的檔案放進去再重新整理頁面。</div>';
+    selectedEpisode = null;
     return;
   }
-  for (const ep of episodes) {
-    container.appendChild(renderEpisode(ep));
+
+  if (!selectedEpisode || !EPISODES.some(e => e.episode === selectedEpisode)) {
+    selectedEpisode = EPISODES[0].episode;
   }
+
+  renderSidebar();
+  renderDetail(EPISODES.find(e => e.episode === selectedEpisode));
 }
 
 async function loadTranslateLangs() {
@@ -187,9 +218,40 @@ async function loadTranslateLangs() {
   TRANSLATE_LANGS = data.translate_langs || [];
 }
 
-function renderEpisode(ep) {
-  const div = document.createElement("div");
-  div.className = "episode";
+function episodeProgress(ep) {
+  const keys = Object.keys(STAGE_LABELS);
+  const done = keys.filter(k => ep[k]).length;
+  return { done, total: keys.length };
+}
+
+function renderSidebar() {
+  const sidebar = document.getElementById("sidebar");
+  sidebar.innerHTML = EPISODES.map(ep => {
+    const { done, total } = episodeProgress(ep);
+    const active = ep.episode === selectedEpisode;
+    return `
+      <div class="sidebar-item ${active ? "active" : ""}" data-episode="${ep.episode}">
+        <div class="name">${ep.episode}</div>
+        <div class="progress-text">${done}/${total} 階段完成</div>
+        <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${Math.round(done / total * 100)}%"></div></div>
+      </div>`;
+  }).join("");
+
+  sidebar.querySelectorAll(".sidebar-item").forEach(item => {
+    item.onclick = () => {
+      selectedEpisode = item.dataset.episode;
+      renderSidebar();
+      renderDetail(EPISODES.find(e => e.episode === selectedEpisode));
+    };
+  });
+}
+
+function renderDetail(ep) {
+  const div = document.getElementById("detail");
+  if (!ep) {
+    div.innerHTML = '<div class="empty">選一個集數開始</div>';
+    return;
+  }
   div.dataset.episode = ep.episode;
 
   const badges = Object.entries(STAGE_LABELS).map(([key, label]) =>
@@ -233,8 +295,6 @@ function renderEpisode(ep) {
   if (ep.qa_done) {
     loadQaReport(div, ep.episode);
   }
-
-  return div;
 }
 
 const OUTPUT_VERSIONS = [
@@ -277,7 +337,14 @@ async function runStage(div, episode, stage, extraQuery = "") {
   msgEl.textContent = "排隊中…";
 
   const res = await fetch(`/api/run/${stage}?episode=${encodeURIComponent(episode)}${extraQuery}`, { method: "POST" });
-  const { job_id } = await res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    buttons.forEach(b => b.disabled = false);
+    msgEl.className = "job-msg err";
+    msgEl.textContent = data.error || "無法送出工作";
+    return;
+  }
+  const { job_id } = data;
 
   const poll = setInterval(async () => {
     const r = await fetch(`/api/job?id=${job_id}`);
