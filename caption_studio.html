@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>字幕編輯（校對／位置／套用）</title>
+<style>
+  body { margin:0; background:#1c1b19; color:#eee; font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 1.1rem; font-weight: 600; color:#ccc; margin-bottom:4px; }
+  .hint { color:#999; font-size:0.8rem; margin-bottom:14px; }
+  .stage {
+    position: relative; width: 100%; aspect-ratio: 16/9;
+    background: #000; border-radius: 8px; overflow: hidden; margin-bottom:10px;
+  }
+  video { width: 100%; height:100%; display: block; }
+
+  /* 字幕位置/寬度覆蓋層（拖拉調整用，來自原 picker/index.html） */
+  .caption-box {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    text-align: center; cursor: move; user-select: none;
+    padding: 4px 8px; box-sizing: border-box;
+    border: 2.5px solid rgba(74,144,247,0.9); background: rgba(74,144,247,0.22);
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.35); min-height: 34px; transition: background-color 0.1s;
+  }
+  .caption-box .width-label {
+    position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+    font-size: 0.7rem; color: #4a90f7; background: rgba(0,0,0,0.6); padding: 1px 6px;
+    border-radius: 4px; white-space: nowrap;
+  }
+  .caption-box .txt {
+    display: inline-block; color: #fff; font-weight: 700;
+    -webkit-text-stroke: 3px #000; paint-order: stroke fill; white-space: nowrap;
+  }
+  .caption-box.dragging { border-color: #ffd24a; background: rgba(255,210,74,0.12); }
+  .handle-w { position: absolute; top: 0; bottom: 0; width: 14px; cursor: ew-resize; background: rgba(74,144,247,0.55); }
+  .caption-box.dragging .handle-w, .caption-box:hover .handle-w { background: rgba(74,144,247,0.5); }
+  .handle-w.left { left: -14px; }
+  .handle-w.right { right: -14px; }
+
+  .style-controls {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px; margin-bottom: 12px;
+  }
+  .style-controls .field { background:#26241f; border-radius:8px; padding:8px 12px; }
+  .style-controls .field label { display:block; font-size:0.72rem; color:#aaa; margin-bottom:4px; }
+  .style-controls .field .row { display:flex; align-items:center; gap:8px; }
+  .style-controls .field input[type=range] { flex:1; }
+  .style-controls .field .val { width:38px; text-align:right; font-variant-numeric: tabular-nums; font-size:0.85rem; }
+
+  .toolbar { display:flex; align-items:center; gap:14px; margin-bottom:12px; font-size:0.85rem; color:#bbb; }
+  .toolbar select {
+    background:#242320; color:#eee; border:1px solid #3a382f; border-radius:6px;
+    padding:4px 8px; font-size:0.85rem;
+  }
+  .teleprompter {
+    height: 240px; overflow-y: auto; scroll-behavior: smooth;
+    border:1px solid #3a382f; border-radius:8px; padding:6px; background:#17160f;
+  }
+  .list { display:flex; flex-direction:column; gap:2px; }
+  .row {
+    display:grid; grid-template-columns: 80px 1fr 30px; gap:8px; align-items:start;
+    padding:8px 10px; border-radius:8px; background:#242320;
+  }
+  .row.passed { opacity:0.42; }
+  .row.edited { background:#2a2712; border-left:3px solid #ffd24a; }
+  .row.active { background:#1c2c42; outline:2px solid #4a90f7; opacity:1; }
+  .row.active.edited { background:#33301a; outline:2px solid #ffd24a; }
+  .row .time {
+    color:#4a90f7; font-size:0.78rem; cursor:pointer; background:none; border:none;
+    text-align:left; padding:4px 0; font-family:inherit;
+  }
+  .row .time:hover { text-decoration:underline; }
+  .row textarea {
+    width:100%; background:#131211; color:#eee; border:1px solid #3a382f; border-radius:6px;
+    padding:6px 8px; font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; font-size:0.9rem;
+    resize:vertical; min-height:2.2em;
+  }
+  .row textarea:focus { outline:1.5px solid #4a90f7; border-color:#4a90f7; }
+  .row-ops { display:flex; flex-direction:column; gap:4px; }
+  .row-ops button {
+    background:#3a382f; color:#ccc; border:none; border-radius:5px;
+    padding:2px 0; font-size:0.85rem; cursor:pointer; line-height:1.4;
+  }
+  .row-ops button:hover:not(:disabled) { background:#4a4839; }
+  .row-ops button:disabled { opacity:0.3; cursor:not-allowed; }
+  button { background:#4a90f7; color:#fff; border:none; border-radius:8px; padding:10px 22px; font-size:0.95rem; cursor:pointer; }
+  button:hover { background:#3a7de0; }
+  button:disabled { background:#3a382f; color:#888; cursor:not-allowed; }
+  .status { color:#8fd39a; font-size:0.85rem; }
+  #autosaveStatus { color:#999; }
+  .floaty {
+    position: fixed; right: 24px; bottom: 90px; width:56px; height:56px; border-radius:50%;
+    font-size:1.4rem; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,0.5); z-index: 20; padding:0;
+  }
+  .floaty-actions {
+    position: fixed; right: 24px; bottom: 158px; z-index: 20;
+    display:flex; flex-direction:column; align-items:flex-end; gap:8px;
+  }
+  .floaty-actions button { box-shadow:0 4px 14px rgba(0,0,0,0.5); white-space:nowrap; }
+  .floaty-actions .status {
+    background:#1c1b19; padding:5px 10px; border-radius:6px; text-align:right; max-width:220px;
+  }
+  .cuts-list {
+    margin-top:10px; border:1px solid #3a382f; border-radius:8px; padding:8px 10px;
+    background:#201a12; font-size:0.82rem;
+  }
+  .cuts-list .cuts-title { color:#e0a94a; margin-bottom:6px; }
+  .cut-item { display:flex; align-items:center; gap:8px; padding:3px 0; color:#ccc; }
+  .cut-item .cut-time { color:#e0a94a; font-size:0.76rem; min-width:96px; }
+  .cut-item .cut-word { flex:1; text-decoration:line-through; color:#a89; }
+  .cut-item button {
+    background:#3a382f; color:#ccc; padding:2px 8px; font-size:0.75rem; border-radius:5px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>字幕編輯（<span id="episode-label"></span>）</h1>
+  <div class="hint">拖動字幕框調整位置/寬度（藍色框，左右把手拉寬度）；下方逐句校對文字，點時間戳跳到影片對照。文字太長按「✂」分句（游標點在要斷開處再按），斷錯按「⌃」跟上一句合併，聽到贅詞/口誤框選文字後按「✂ 剪除選取片段」。所有動作停手 3 秒會自動存檔（含字幕位置）。改完按右下角「套用字幕」，會存檔並重新燒錄字幕到影片。</div>
+  <div class="stage" id="stage">
+    <video id="video" controls></video>
+    <div class="caption-box" id="captionBox">
+      <span class="width-label" id="widthLabel"></span>
+      <div class="handle-w left" data-side="left"></div>
+      <span class="txt" id="captionText">（拖動時間軸看實際字幕文字）</span>
+      <div class="handle-w right" data-side="right"></div>
+    </div>
+  </div>
+  <div class="style-controls">
+    <div class="field">
+      <label>高度（MarginV，離底部距離，越大越高）</label>
+      <div class="row"><input type="range" id="marginV" min="20" max="400" step="2"><span class="val" id="marginVVal"></span></div>
+    </div>
+    <div class="field">
+      <label>寬度（左右邊界 MarginL/MarginR，越小越寬）</label>
+      <div class="row"><input type="range" id="marginLR" min="20" max="400" step="2"><span class="val" id="marginLRVal"></span></div>
+    </div>
+    <div class="field">
+      <label>字間距（Spacing）</label>
+      <div class="row"><input type="range" id="spacing" min="0" max="12" step="0.5"><span class="val" id="spacingVal"></span></div>
+    </div>
+  </div>
+  <div class="toolbar">
+    <label>播放速度
+      <select id="speedSelect">
+        <option value="0.75">0.75x</option>
+        <option value="1" selected>1x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+        <option value="1.75">1.75x</option>
+        <option value="2">2x</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="shadowMode"> 跟讀模式（播完這句自動暫停）</label>
+  </div>
+  <div class="teleprompter" id="teleprompter">
+    <div class="list" id="list"></div>
+  </div>
+  <div class="cuts-list" id="cutsList" style="display:none;">
+    <div class="cuts-title">待剪除的贅詞/口誤片段（存檔後才會真的在跳剪套用）：</div>
+    <div id="cutsItems"></div>
+  </div>
+</div>
+<div class="floaty-actions">
+  <span class="status" id="statusMsg"></span>
+  <span class="status" id="autosaveStatus" title="每停手 3 秒自動存檔一次（文字/位置/樣式都算）"></span>
+  <button id="undoBtn" title="復原上一次分句/合併/剪除選取片段（快捷鍵 Ctrl+Z，在文字框外按）" disabled>↩ 復原上一步</button>
+  <button id="cutSelectionBtn" title="先在文字框裡框選要刪掉的字，再按這個">✂ 剪除選取片段</button>
+  <button id="saveBtn" title="快捷鍵 Ctrl+S">💾 儲存</button>
+  <button id="applyBtn" title="存檔並重新燒錄字幕到影片">▶ 套用字幕</button>
+</div>
+<button id="pauseBtn" class="floaty" title="暫停/播放（快捷鍵 Ctrl+Space）">⏸</button>
+
+<script>
+const params = new URLSearchParams(location.search);
+const episode = params.get("episode") || "";
+const videoRel = params.get("video") || "";
+document.getElementById("episode-label").textContent = episode;
+
+const video = document.getElementById("video");
+video.src = videoRel;
+
+let segments = [];   // [{id, start, end, text, originalText}]，依 start 排序
+let idCounter = 0;
+let activeId = null;
+let manualCuts = [];  // [{start, end, word}]，使用者框選標記要剪掉的贅詞/口誤
+let lastInputAt = 0;  // 最近一次在文字框裡打字的時間戳，判斷「是不是正在打字」用（見 updateActiveRow）
+
+// ---------- 字幕位置/寬度/字距（來自原 picker/index.html）----------
+const stage = document.getElementById("stage");
+const box = document.getElementById("captionBox");
+const textEl = document.getElementById("captionText");
+const marginVInput = document.getElementById("marginV");
+const marginLRInput = document.getElementById("marginLR");
+const spacingInput = document.getElementById("spacing");
+const marginVVal = document.getElementById("marginVVal");
+const marginLRVal = document.getElementById("marginLRVal");
+const spacingVal = document.getElementById("spacingVal");
+let style = { MarginV: 60, MarginL: 120, MarginR: 120, Spacing: 2 };
+// PlayRes 假設 1920x1080，跟 config.py 一致
+const PLAY_RES_Y = 1080;
+const PLAY_RES_X = 1920;
+
+function applyStyleToUI() {
+  marginVInput.value = style.MarginV;
+  spacingInput.value = style.Spacing;
+  marginVVal.textContent = style.MarginV;
+  spacingVal.textContent = style.Spacing;
+  renderBox();
+}
+
+function renderBox() {
+  const stageH = stage.clientHeight;
+  const stageW = stage.clientWidth;
+  const bottomPx = (style.MarginV / PLAY_RES_Y) * stageH;
+  box.style.bottom = bottomPx + "px";
+  const widthPx = stageW - ((style.MarginL + style.MarginR) / PLAY_RES_X) * stageW;
+  const finalWidthPx = Math.max(60, widthPx);
+  box.style.width = finalWidthPx + "px";
+  textEl.style.letterSpacing = style.Spacing + "px";
+  const fontPx = (70 / PLAY_RES_Y) * stageH; // 對應 config.py Fontsize=70
+  textEl.style.fontSize = Math.max(10, fontPx) + "px";
+  const widthLabel = document.getElementById("widthLabel");
+  const realWidthPx = Math.round((finalWidthPx / stageW) * PLAY_RES_X);
+  widthLabel.textContent = `寬度 ${realWidthPx}px（MarginL ${style.MarginL} / MarginR ${style.MarginR}）`;
+  const avgMargin = Math.round((style.MarginL + style.MarginR) / 2);
+  marginLRInput.value = avgMargin;
+  marginLRVal.textContent = style.MarginL === style.MarginR ? style.MarginL : `${style.MarginL}/${style.MarginR}`;
+}
+
+let draggingV = false, dragStartY = 0, dragStartMarginV = 0;
+box.addEventListener("mousedown", (e) => {
+  if (e.target.classList.contains("handle-w")) return;
+  draggingV = true;
+  box.classList.add("dragging");
+  dragStartY = e.clientY;
+  dragStartMarginV = style.MarginV;
+  e.preventDefault();
+});
+
+let draggingW = null, dragStartX = 0, dragStartMarginL = 0, dragStartMarginR = 0;
+box.querySelectorAll(".handle-w").forEach(h => {
+  h.addEventListener("mousedown", (e) => {
+    draggingW = h.dataset.side;
+    box.classList.add("dragging");
+    dragStartX = e.clientX;
+    dragStartMarginL = style.MarginL;
+    dragStartMarginR = style.MarginR;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+});
+
+window.addEventListener("mousemove", (e) => {
+  const stageH = stage.clientHeight;
+  const stageW = stage.clientWidth;
+  if (draggingV) {
+    const dy = e.clientY - dragStartY;
+    const deltaMarginV = -(dy / stageH) * PLAY_RES_Y;
+    style.MarginV = Math.max(20, Math.min(400, Math.round(dragStartMarginV + deltaMarginV)));
+    applyStyleToUI();
+    markDirty();
+  } else if (draggingW) {
+    const dx = e.clientX - dragStartX;
+    const deltaMargin = -(dx / stageW) * PLAY_RES_X;
+    if (draggingW === "left") {
+      style.MarginL = Math.max(20, Math.min(400, Math.round(dragStartMarginL + deltaMargin)));
+    } else {
+      style.MarginR = Math.max(20, Math.min(400, Math.round(dragStartMarginR - deltaMargin)));
+    }
+    applyStyleToUI();
+    markDirty();
+  }
+});
+window.addEventListener("mouseup", () => {
+  draggingV = false;
+  draggingW = null;
+  box.classList.remove("dragging");
+});
+marginVInput.addEventListener("input", () => { style.MarginV = Number(marginVInput.value); applyStyleToUI(); markDirty(); });
+marginLRInput.addEventListener("input", () => {
+  style.MarginL = Number(marginLRInput.value);
+  style.MarginR = Number(marginLRInput.value);
+  applyStyleToUI();
+  markDirty();
+});
+spacingInput.addEventListener("input", () => { style.Spacing = Number(spacingInput.value); applyStyleToUI(); markDirty(); });
+window.addEventListener("resize", renderBox);
+
+// ---------- 復原（分句/合併/剪除選取片段）----------
+let history = [];
+const MAX_HISTORY = 30;
+
+function pushHistory() {
+  history.push({
+    segments: segments.map(s => ({ ...s })),
+    manualCuts: manualCuts.map(c => ({ ...c })),
+  });
+  if (history.length > MAX_HISTORY) history.shift();
+  updateUndoBtn();
+}
+
+function undo() {
+  if (!history.length) return;
+  const prev = history.pop();
+  segments = prev.segments;
+  manualCuts = prev.manualCuts;
+  markDirty();
+  render();
+  renderCutsList();
+  updateUndoBtn();
+}
+
+function updateUndoBtn() {
+  const btn = document.getElementById("undoBtn");
+  if (btn) btn.disabled = history.length === 0;
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = (s % 60).toFixed(1);
+  return `${m}:${sec.padStart(4, "0")}`;
+}
+
+function updateActiveRow() {
+  if (!segments.length) return;
+  const t = video.currentTime;
+  let found = null;
+  for (const seg of segments) {
+    if (t >= seg.start && t < seg.end) { found = seg.id; break; }
+  }
+  if (found === null) {
+    for (const seg of segments) {
+      if (seg.start <= t) found = seg.id;
+      else break;
+    }
+  }
+  if (found !== activeId) {
+    activeId = found;
+    const activeIndex = segments.findIndex(s => s.id === activeId);
+    document.querySelectorAll(".row").forEach(r => {
+      const idx = segments.findIndex(s => String(s.id) === r.dataset.id);
+      r.classList.remove("active");
+      r.classList.toggle("passed", activeIndex !== -1 && idx < activeIndex);
+    });
+    if (activeId !== null) {
+      const row = document.querySelector(`.row[data-id="${activeId}"]`);
+      if (row) {
+        row.classList.add("active");
+        row.classList.remove("passed");
+        const recentlyTyped = Date.now() - lastInputAt < 3000;
+        if (!recentlyTyped) {
+          row.scrollIntoView({ behavior: "smooth", block: "center" });
+          const ta = row.querySelector("textarea");
+          if (ta) {
+            ta.focus();
+            const len = ta.value.length;
+            ta.setSelectionRange(len, len);
+          }
+        }
+      }
+    }
+  }
+
+  // 字幕位置覆蓋層顯示目前播到的那句文字，跟播放頭同步（取代原 picker 用逐字時間戳
+  // 湊「附近幾個詞」的做法——直接顯示目前作用中那句的校對後文字更準確、也不用另外
+  // 打一次 API 抓 words）。
+  const activeSeg = segments.find(s => s.id === activeId);
+  textEl.textContent = activeSeg ? activeSeg.text : "（拖動時間軸看實際字幕文字）";
+}
+
+video.addEventListener("timeupdate", updateActiveRow);
+video.addEventListener("seeked", updateActiveRow);
+
+function splitRow(id, cursorPos) {
+  const i = segments.findIndex(s => s.id === id);
+  if (i === -1) return;
+  const seg = segments[i];
+  const text = seg.text;
+  if (text.trim().length < 2) return;
+
+  let splitPos;
+  if (typeof cursorPos === "number" && cursorPos > 0 && cursorPos < text.length) {
+    splitPos = cursorPos;
+  } else {
+    const t = video.currentTime;
+    const inRange = t > seg.start && t < seg.end;
+    const splitTime = inRange ? t : (seg.start + seg.end) / 2;
+    const ratio = (splitTime - seg.start) / (seg.end - seg.start);
+    splitPos = Math.min(text.length - 1, Math.max(1, Math.round(text.length * ratio)));
+  }
+
+  const timeRatio = splitPos / text.length;
+  const splitTime = seg.start + (seg.end - seg.start) * timeRatio;
+
+  pushHistory();
+  markDirty();
+  const before = { id: idCounter++, start: seg.start, end: splitTime, text: text.slice(0, splitPos) };
+  const after = { id: idCounter++, start: splitTime, end: seg.end, text: text.slice(splitPos) };
+  segments.splice(i, 1, before, after);
+  render();
+}
+
+function mergeUp(id) {
+  const i = segments.findIndex(s => s.id === id);
+  if (i <= 0) return;
+  const prev = segments[i - 1];
+  const cur = segments[i];
+  const merged = { id: idCounter++, start: prev.start, end: cur.end, text: prev.text + cur.text };
+  pushHistory();
+  markDirty();
+  segments.splice(i - 1, 2, merged);
+  render();
+}
+
+function render() {
+  const list = document.getElementById("list");
+  list.innerHTML = segments.map((seg, i) => {
+    const edited = seg.originalText !== undefined && seg.text !== seg.originalText;
+    return `
+      <div class="row ${edited ? "edited" : ""}" data-id="${seg.id}">
+        <button class="time" data-seek="${seg.start}">${fmtTime(seg.start)}</button>
+        <textarea data-id="${seg.id}" rows="1">${seg.text}</textarea>
+        <div class="row-ops">
+          <button type="button" data-merge="${seg.id}" title="跟上一句合併" ${i === 0 ? "disabled" : ""}>⌃</button>
+          <button type="button" data-split="${seg.id}" title="分成兩句">✂</button>
+        </div>
+      </div>`;
+  }).join("");
+
+  list.querySelectorAll("[data-seek]").forEach(btn => {
+    btn.onclick = () => {
+      video.currentTime = Number(btn.dataset.seek);
+      video.play();
+      updateActiveRow();
+    };
+  });
+  list.querySelectorAll("textarea").forEach(ta => {
+    ta.oninput = () => {
+      lastInputAt = Date.now();
+      markDirty();
+      const seg = segments.find(s => String(s.id) === ta.dataset.id);
+      if (!seg) return;
+      seg.text = ta.value;
+      ta.closest(".row").classList.toggle("edited", seg.originalText !== undefined && seg.text !== seg.originalText);
+      if (seg.id === activeId) textEl.textContent = seg.text;
+    };
+  });
+  list.querySelectorAll("[data-merge]").forEach(btn => {
+    btn.onclick = () => mergeUp(Number(btn.dataset.merge));
+  });
+  list.querySelectorAll("[data-split]").forEach(btn => {
+    btn.onclick = () => {
+      const ta = btn.closest(".row").querySelector("textarea");
+      splitRow(Number(btn.dataset.split), ta ? ta.selectionStart : undefined);
+    };
+  });
+}
+
+async function load() {
+  const [eventsRes, defaultsRes] = await Promise.all([
+    fetch(`/api/events?episode=${encodeURIComponent(episode)}`),
+    fetch(`/api/defaults?episode=${encodeURIComponent(episode)}`),
+  ]);
+  const data = await eventsRes.json();
+  if (data.error) {
+    document.getElementById("list").innerHTML = `<div style="color:#e88">${data.error}</div>`;
+    return;
+  }
+  const corrections = data.corrections || {};
+  segments = data.events.map(ev => {
+    const text = corrections[ev.index] !== undefined ? corrections[ev.index] : ev.text;
+    idCounter = Math.max(idCounter, ev.index + 1);
+    return { id: ev.index, start: ev.start, end: ev.end, text, originalText: ev.text };
+  });
+  manualCuts = data.manual_cuts || [];
+  render();
+  renderCutsList();
+
+  const defaults = await defaultsRes.json();
+  const base = defaults.override || defaults.defaults;
+  style = { ...style, ...base };
+  applyStyleToUI();
+}
+
+// ---------- 自動暫存：文字校正/分句合併/剪除片段/字幕位置樣式，全部共用同一套
+// debounce（停手 3 秒才存），存的是跟手動按鈕同一份檔案，不是另外一份草稿。----------
+let dirty = false;
+let autosaveTimer = null;
+let lastSavedAt = null;
+
+function markDirty() {
+  dirty = true;
+  updateSaveStatus();
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(persistDraft, 3000);
+}
+
+async function persistDraft() {
+  const payload = segments
+    .slice()
+    .sort((a, b) => a.start - b.start)
+    .map(s => ({ start: s.start, end: s.end, text: s.text }));
+  await Promise.all([
+    fetch(`/api/captions/save_segments?episode=${encodeURIComponent(episode)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ segments: payload }),
+    }),
+    fetch(`/api/captions/save_manual_cuts?episode=${encodeURIComponent(episode)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cuts: manualCuts }),
+    }),
+    fetch(`/api/save?episode=${encodeURIComponent(episode)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(style),
+    }),
+  ]);
+  dirty = false;
+  lastSavedAt = new Date();
+  updateSaveStatus();
+  return payload;
+}
+
+function updateSaveStatus() {
+  const el = document.getElementById("autosaveStatus");
+  if (!el) return;
+  if (dirty) {
+    el.textContent = "有未存檔的變更…";
+  } else if (lastSavedAt) {
+    const hh = String(lastSavedAt.getHours()).padStart(2, "0");
+    const mm = String(lastSavedAt.getMinutes()).padStart(2, "0");
+    const ss = String(lastSavedAt.getSeconds()).padStart(2, "0");
+    el.textContent = `已存檔 ${hh}:${mm}:${ss}`;
+  }
+}
+
+window.addEventListener("pagehide", () => {
+  if (!dirty) return;
+  const payload = segments
+    .slice()
+    .sort((a, b) => a.start - b.start)
+    .map(s => ({ start: s.start, end: s.end, text: s.text }));
+  navigator.sendBeacon(
+    `/api/captions/save_segments?episode=${encodeURIComponent(episode)}`,
+    new Blob([JSON.stringify({ segments: payload })], { type: "application/json" })
+  );
+  navigator.sendBeacon(
+    `/api/captions/save_manual_cuts?episode=${encodeURIComponent(episode)}`,
+    new Blob([JSON.stringify({ cuts: manualCuts })], { type: "application/json" })
+  );
+  navigator.sendBeacon(
+    `/api/save?episode=${encodeURIComponent(episode)}`,
+    new Blob([JSON.stringify(style)], { type: "application/json" })
+  );
+});
+
+async function manualSave() {
+  const statusMsg = document.getElementById("statusMsg");
+  clearTimeout(autosaveTimer);
+  const payload = await persistDraft();
+  statusMsg.textContent = manualCuts.length
+    ? `已儲存 ${payload.length} 句字幕、${manualCuts.length} 段待剪除片段與字幕位置`
+    : `已儲存 ${payload.length} 句字幕與字幕位置`;
+  setTimeout(() => statusMsg.textContent = "", 4000);
+}
+document.getElementById("saveBtn").addEventListener("click", manualSave);
+
+// ---------- 套用字幕：存檔後呼叫 /api/run/captions（跟儀表板④原本同一個 API），
+// 輪詢跟 dashboard.html 的 runStage() 是同一套簡單模式。---------- ----------
+async function applyCaptions() {
+  const applyBtn = document.getElementById("applyBtn");
+  const statusMsg = document.getElementById("statusMsg");
+  clearTimeout(autosaveTimer);
+  await persistDraft();
+  applyBtn.disabled = true;
+  statusMsg.textContent = "排隊中…";
+
+  const res = await fetch(`/api/run/captions?episode=${encodeURIComponent(episode)}`, { method: "POST" });
+  const { job_id } = await res.json();
+  const poll = setInterval(async () => {
+    const r = await fetch(`/api/job?id=${job_id}`);
+    const job = await r.json();
+    if (job.status === "queued" || job.status === "running") {
+      statusMsg.textContent = job.status === "running" ? "套用中…" : "排隊中…";
+      return;
+    }
+    clearInterval(poll);
+    applyBtn.disabled = false;
+    if (job.status === "error") {
+      statusMsg.textContent = "套用失敗：" + job.message;
+    } else {
+      statusMsg.textContent = "已套用字幕，回儀表板可以看到「字幕已匹配」";
+    }
+  }, 1200);
+}
+document.getElementById("applyBtn").addEventListener("click", applyCaptions);
+
+// ---------- 框選文字剪除贅詞/口誤 ----------
+document.getElementById("cutSelectionBtn").addEventListener("mousedown", (e) => {
+  e.preventDefault();
+});
+document.getElementById("cutSelectionBtn").addEventListener("click", () => {
+  const ta = document.activeElement;
+  if (!ta || ta.tagName !== "TEXTAREA" || !ta.dataset.id) {
+    alert("請先在字幕文字框裡框選要剪掉的字，再按這個按鈕");
+    return;
+  }
+  const selStart = ta.selectionStart, selEnd = ta.selectionEnd;
+  if (selStart === selEnd) {
+    alert("請先框選要剪掉的文字範圍");
+    return;
+  }
+  const seg = segments.find(s => String(s.id) === ta.dataset.id);
+  if (!seg) return;
+
+  const text = seg.text;
+  const dur = seg.end - seg.start;
+  const cutStart = seg.start + dur * (selStart / text.length);
+  const cutEnd = seg.start + dur * (selEnd / text.length);
+  const word = text.slice(selStart, selEnd);
+
+  pushHistory();
+  markDirty();
+  manualCuts.push({ start: cutStart, end: cutEnd, word });
+  seg.text = text.slice(0, selStart) + text.slice(selEnd);
+
+  render();
+  renderCutsList();
+});
+
+function renderCutsList() {
+  const box2 = document.getElementById("cutsList");
+  const items = document.getElementById("cutsItems");
+  if (!manualCuts.length) {
+    box2.style.display = "none";
+    items.innerHTML = "";
+    return;
+  }
+  box2.style.display = "block";
+  items.innerHTML = manualCuts.map((c, i) => `
+    <div class="cut-item">
+      <span class="cut-time">${fmtTime(c.start)}–${fmtTime(c.end)}</span>
+      <span class="cut-word">${c.word}</span>
+      <button type="button" data-preview-cut="${i}" title="播剪接點前後，聽聽看接不接得順">▶ 試聽</button>
+      <button type="button" data-remove-cut="${i}">取消</button>
+    </div>
+  `).join("");
+  items.querySelectorAll("[data-remove-cut]").forEach(btn => {
+    btn.onclick = () => {
+      manualCuts.splice(Number(btn.dataset.removeCut), 1);
+      markDirty();
+      renderCutsList();
+    };
+  });
+  items.querySelectorAll("[data-preview-cut]").forEach(btn => {
+    btn.onclick = () => previewCut(manualCuts[Number(btn.dataset.previewCut)]);
+  });
+}
+
+let previewTickHandler = null;
+function previewCut(cut) {
+  if (previewTickHandler) {
+    video.removeEventListener("timeupdate", previewTickHandler);
+  }
+  const lead = 1.5, tail = 1.5;
+  const previewStart = Math.max(0, cut.start - lead);
+  const previewEnd = cut.end + tail;
+  let jumped = false;
+
+  previewTickHandler = () => {
+    if (!jumped && video.currentTime >= cut.start) {
+      jumped = true;
+      video.currentTime = cut.end;
+      return;
+    }
+    if (jumped && video.currentTime >= previewEnd) {
+      video.pause();
+      video.removeEventListener("timeupdate", previewTickHandler);
+      previewTickHandler = null;
+    }
+  };
+  video.addEventListener("timeupdate", previewTickHandler);
+  video.currentTime = previewStart;
+  video.play();
+  updateActiveRow();
+}
+
+document.getElementById("speedSelect").addEventListener("change", (e) => {
+  video.playbackRate = parseFloat(e.target.value);
+});
+
+const pauseBtn = document.getElementById("pauseBtn");
+function syncPauseBtn() {
+  pauseBtn.textContent = video.paused ? "▶" : "⏸";
+}
+pauseBtn.addEventListener("click", () => {
+  if (video.paused) video.play(); else video.pause();
+});
+video.addEventListener("play", syncPauseBtn);
+video.addEventListener("pause", syncPauseBtn);
+syncPauseBtn();
+
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && e.ctrlKey) {
+    e.preventDefault();
+    if (video.paused) video.play(); else video.pause();
+  }
+  if ((e.key === "z" || e.key === "Z") && e.ctrlKey && e.target.tagName !== "TEXTAREA") {
+    e.preventDefault();
+    undo();
+  }
+  if ((e.key === "s" || e.key === "S") && e.ctrlKey) {
+    e.preventDefault();
+    manualSave();
+  }
+});
+
+document.getElementById("undoBtn").addEventListener("click", undo);
+
+const shadowModeEl = document.getElementById("shadowMode");
+video.addEventListener("timeupdate", () => {
+  if (!shadowModeEl.checked || video.paused) return;
+  const seg = segments.find(s => s.id === activeId);
+  if (seg && video.currentTime >= seg.end - 0.05) {
+    video.pause();
+  }
+});
+
+let wheelLocked = false;
+document.getElementById("teleprompter").addEventListener("wheel", (e) => {
+  e.preventDefault();
+  if (wheelLocked || !segments.length) return;
+  wheelLocked = true;
+  setTimeout(() => { wheelLocked = false; }, 350);
+
+  const curIdx = segments.findIndex(s => s.id === activeId);
+  const baseIdx = curIdx === -1 ? 0 : curIdx;
+  const nextIdx = Math.min(segments.length - 1, Math.max(0, baseIdx + (e.deltaY > 0 ? 1 : -1)));
+  const seg = segments[nextIdx];
+  video.currentTime = seg.start;
+  if (shadowModeEl.checked) video.play();
+  updateActiveRow();
+}, { passive: false });
+
+load();
+</script>
+</body>
+</html>

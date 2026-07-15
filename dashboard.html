@@ -76,7 +76,7 @@
 <body>
 <div class="wrap">
   <h1>影片後製儀表板</h1>
-  <div class="sub">把 input/ 資料夾裡的集數依序跑過各階段。順序建議：轉錄 → 校對字幕（可略過）→ 調整字幕位置（可略過）→ 匹配字幕 → 偵測贅詞 → 確認要剪的 → 套用跳剪 → 套用片頭尾 → 品質檢查 → 翻譯字幕（可略過，需要 GOOGLE_TRANSLATE_API_KEY）。</div>
+  <div class="sub">把 input/ 資料夾裡的集數依序跑過各階段。順序建議：① 轉錄 → ② 編輯字幕（校對文字／調整位置／套用，可略過，同一頁做完）→ ③ 偵測贅詞 → 確認要剪的 → ④ 套用跳剪 → ⑤ 套用片頭尾 → ⑥ 品質檢查 → ⑦ 翻譯字幕（可略過，需要 GOOGLE_TRANSLATE_API_KEY）。</div>
 
   <div class="upload-box">
     <input type="file" id="fileInput" accept=".mp4,.mov,.mkv,.avi,.m4v">
@@ -203,14 +203,12 @@ function renderEpisode(ep) {
     <div class="badges">${badges}</div>
     <div class="actions">
       <button data-action="transcribe" class="${ep.transcribed ? "done" : ""}">① 開始轉錄</button>
-      <button data-action="caption_editor" class="${ep.caption_reviewed ? "done" : ""}">② 校對字幕</button>
-      <button data-action="picker" class="${ep.style_adjusted ? "done" : ""}">③ 調整字幕位置</button>
-      <button data-action="captions" class="${ep.captioned ? "done" : ""}">④ 匹配字幕</button>
-      <button data-action="filler_detect" class="${ep.filler_detected ? "done" : ""}">⑤ 偵測贅詞</button>
-      <button data-action="jumpcut" class="${ep.jumpcut ? "done" : ""}">⑥ 套用跳剪</button>
-      <button data-action="bumper" class="${ep.final ? "done" : ""}">⑦ 套用片頭尾</button>
-      <button data-action="qa" class="${ep.qa_done ? "done" : ""}">⑧ 品質檢查</button>
-      ${TRANSLATE_LANGS.map(lang => `<button data-action="translate" data-lang="${lang}" class="${ep.translated_langs.includes(lang) ? "done" : ""}">⑨ 翻譯（${lang}）</button>`).join("")}
+      <button data-action="caption_studio" class="${ep.captioned ? "done" : ""}">② 編輯字幕（校對／位置／套用）</button>
+      <button data-action="filler_detect" class="${ep.filler_detected ? "done" : ""}">③ 偵測贅詞</button>
+      <button data-action="jumpcut" class="${ep.jumpcut ? "done" : ""}">④ 套用跳剪</button>
+      <button data-action="bumper" class="${ep.final ? "done" : ""}">⑤ 套用片頭尾</button>
+      <button data-action="qa" class="${ep.qa_done ? "done" : ""}">⑥ 品質檢查</button>
+      ${TRANSLATE_LANGS.map(lang => `<button data-action="translate" data-lang="${lang}" class="${ep.translated_langs.includes(lang) ? "done" : ""}">⑦ 翻譯（${lang}）</button>`).join("")}
     </div>
     <div class="job-msg"></div>
     <div class="flagged-area"></div>
@@ -219,11 +217,8 @@ function renderEpisode(ep) {
   `;
 
   div.querySelector('[data-action="transcribe"]').onclick = () => runStage(div, ep.episode, "transcribe");
-  div.querySelector('[data-action="caption_editor"]').onclick = () =>
-    window.open(`/caption_editor.html?episode=${encodeURIComponent(ep.episode)}&video=input/${encodeURIComponent(ep.video)}`, "_blank");
-  div.querySelector('[data-action="picker"]').onclick = () =>
-    window.open(`/picker/index.html?episode=${encodeURIComponent(ep.episode)}&video=input/${encodeURIComponent(ep.video)}`, "_blank");
-  div.querySelector('[data-action="captions"]').onclick = () => runStage(div, ep.episode, "captions");
+  div.querySelector('[data-action="caption_studio"]').onclick = () =>
+    window.open(`/caption_studio.html?episode=${encodeURIComponent(ep.episode)}&video=input/${encodeURIComponent(ep.video)}`, "_blank");
   div.querySelector('[data-action="filler_detect"]').onclick = () => runStage(div, ep.episode, "filler_detect");
   div.querySelector('[data-action="jumpcut"]').onclick = () => runStage(div, ep.episode, "jumpcut");
   div.querySelector('[data-action="bumper"]').onclick = () => runStage(div, ep.episode, "bumper");
