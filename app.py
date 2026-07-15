@@ -8,6 +8,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import sys
 import threading
 import uuid
@@ -28,9 +29,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import (  # noqa: E402
+    BRANDS_DIR,
     CAPTION_STYLE,
     DEFAULT_BRAND,
     INPUT_DIR,
+    OUTPUT_DIR,
     TRANSLATE_TARGET_LANGS,
     WORK_DIR,
 )
@@ -123,6 +126,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/config":  # 儀表板依這份清單動態產生每個語言的翻譯按鈕
             return self._send_json({"translate_langs": TRANSLATE_TARGET_LANGS})
 
+        if parsed.path == "/api/brands":  # 片頭/片尾品牌清單，套用片頭尾時選版本用
+            brands = []
+            if BRANDS_DIR.exists():
+                for d in sorted(BRANDS_DIR.iterdir()):
+                    if d.is_dir():
+                        brands.append({
+                            "name": d.name,
+                            "has_intro": (d / "intro.mp4").exists(),
+                            "has_outro": (d / "outro.mp4").exists(),
+                        })
+            return self._send_json(brands)
+
         if parsed.path == "/api/job":
             job_id = qs.get("id", [""])[0]
             with JOBS_LOCK:
@@ -135,9 +150,19 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/filler":
             episode = qs.get("episode", [""])[0]
             review_path = WORK_DIR / episode / "filler_review.json"
-            if review_path.exists():
-                return self._send_json(json.loads(review_path.read_text(encoding="utf-8")))
-            return self._send_json({"auto_cut": [], "flagged": []})
+            approved_path = WORK_DIR / episode / "approved_cuts.json"
+            jumpcut_path = OUTPUT_DIR / f"{episode}_jumpcut.mp4"
+            out = (
+                json.loads(review_path.read_text(encoding="utf-8"))
+                if review_path.exists()
+                else {"auto_cut": [], "flagged": []}
+            )
+            out["detected"] = review_path.exists()
+            out["approved"] = (
+                json.loads(approved_path.read_text(encoding="utf-8")) if approved_path.exists() else []
+            )
+            out["jumpcut_applied"] = jumpcut_path.exists()
+            return self._send_json(out)
 
         if parsed.path == "/api/qa":  # ⑧ 品質檢查結果（qa_report.json，沒有就回空殼）
             episode = qs.get("episode", [""])[0]
@@ -306,13 +331,20 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             filename = qs.get("filename", [""])[0]
             return self._handle_upload(filename)
 
+        if parsed.path == "/api/brands/import_path":  # 從本機路徑複製片頭/片尾到 brands/<brand>/
+            body = self._read_json_body()
+            return self._handle_brand_import(
+                body.get("brand", ""), body.get("kind", ""), body.get("source_path", "")
+            )
+
         if parsed.path == "/api/save":  # picker 工具存 style_override.json
             body = self._read_json_body()
+            # 只寫呼叫方實際有帶的欄位；舊版 picker/index.html 沒有 Fontsize 欄位，
+            # 若照樣寫 null 進檔案，merge_style 會把 Fontsize 疊成 None，燒字幕時 ffmpeg 會噴錯。
             out = {
-                "MarginV": body.get("MarginV"),
-                "MarginL": body.get("MarginL"),
-                "MarginR": body.get("MarginR"),
-                "Spacing": body.get("Spacing"),
+                k: body[k]
+                for k in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize")
+                if k in body
             }
             episode_dir = WORK_DIR / episode
             episode_dir.mkdir(parents=True, exist_ok=True)
@@ -345,6 +377,25 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         return self._send_json({"ok": True, "filename": safe_name, "size": length})
 
+    def _handle_brand_import(self, brand, kind, source_path):
+        # 這是純本機工具（server 只綁 127.0.0.1，沒有帳號驗證），跟其他階段一樣預設
+        # 呼叫方是本人；brand 一樣只取檔名部分防路徑穿越，跟 _handle_upload 同一套做法。
+        safe_brand = Path(brand).name.strip()
+        if not safe_brand or kind not in ("intro", "outro"):
+            return self._send_json({"error": "品牌名稱或類型不正確"}, status=400)
+
+        src = Path(source_path)
+        if not src.is_file():
+            return self._send_json({"error": f"找不到檔案：{source_path}"}, status=400)
+        if src.suffix.lower() not in {".mp4", ".mov", ".mkv", ".avi", ".m4v"}:
+            return self._send_json({"error": "檔案格式不支援"}, status=400)
+
+        brand_dir = BRANDS_DIR / safe_brand
+        brand_dir.mkdir(parents=True, exist_ok=True)
+        dest = brand_dir / f"{kind}.mp4"
+        shutil.copy2(src, dest)
+        return self._send_json({"ok": True, "brand": safe_brand, "kind": kind})
+
     # ---------- helpers ----------
     def _picker_state(self, episode):
         override_path = WORK_DIR / episode / "style_override.json"
@@ -355,6 +406,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 "MarginL": CAPTION_STYLE["MarginL"],
                 "MarginR": CAPTION_STYLE["MarginR"],
                 "Spacing": CAPTION_STYLE["Spacing"],
+                "Fontsize": CAPTION_STYLE["Fontsize"],
             },
             "override": None,
             "words": [],

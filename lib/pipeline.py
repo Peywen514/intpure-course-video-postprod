@@ -63,10 +63,13 @@ def list_episodes():
     for ep, info in sorted(episodes.items()):
         work_dir = WORK_DIR / ep
         info["transcribed"] = (work_dir / "transcript.json").exists()
-        info["style_adjusted"] = (work_dir / "style_override.json").exists()
+        # caption_studio.html 的自動存檔一次會把校對文字／字幕位置／字體大小一起存檔
+        # （見 persistDraft()），三個檔案永遠同進退，所以只用一個徽章代表「編輯過」，
+        # 不需要分開顯示校對 vs 位置調整兩個狀態。
         info["caption_reviewed"] = (
             (work_dir / "caption_corrections.json").exists()
             or (work_dir / "segments_override.json").exists()
+            or (work_dir / "style_override.json").exists()
         )
         info["captioned"] = (OUTPUT_DIR / f"{ep}_captioned.mp4").exists()
         info["filler_detected"] = (work_dir / "filler_review.json").exists()

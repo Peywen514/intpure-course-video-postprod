@@ -7,6 +7,11 @@
   body { margin:0; background:#1c1b19; color:#eee; font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; }
   .wrap { max-width: 980px; margin: 0 auto; padding: 20px; }
   h1 { font-size: 1.1rem; font-weight: 600; color:#ccc; margin-bottom:4px; }
+  .back-link {
+    display:inline-block; color:#8fa8d9; font-size:0.8rem; text-decoration:none;
+    margin-bottom:8px;
+  }
+  .back-link:hover { text-decoration:underline; }
   .hint { color:#999; font-size:0.8rem; margin-bottom:14px; }
   .stage {
     position: relative; width: 100%; aspect-ratio: 16/9;
@@ -120,12 +125,47 @@
     background:#3a382f; color:#ccc; width:26px; height:26px; padding:0; font-size:0.8rem;
     border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
   }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center; z-index: 30;
+  }
+  .modal-box {
+    background: #201f1b; border: 1px solid #3a382f; border-radius: 12px;
+    width: min(640px, 92vw); max-height: 82vh; overflow-y: auto; padding: 20px 22px;
+  }
+  .modal-box h2 { font-size: 1rem; color: #eee; margin: 0 0 12px; }
+  .modal-box .modal-close {
+    float: right; background: #3a382f; color: #ccc; width: 28px; height: 28px;
+    border-radius: 50%; padding: 0; font-size: 0.9rem;
+  }
+  .modal-flagged-item {
+    display: flex; align-items: flex-start; gap: 8px; padding: 6px 4px;
+    border-bottom: 1px solid #2a2822; font-size: 0.85rem;
+  }
+  .modal-flagged-item .idx-label { color: #999; font-size: 0.75rem; min-width: 26px; padding-top: 2px; }
+  .modal-flagged-item .txt { color: #ccc; flex: 1; line-height: 1.5; }
+  .modal-flagged-item .txt b { color: #ffd24a; }
+  .modal-batch-select {
+    display: flex; align-items: center; gap: 6px; margin: 10px 0; font-size: 0.8rem;
+    color: #bbb; flex-wrap: wrap;
+  }
+  .modal-batch-select button {
+    padding: 5px 10px; font-size: 0.78rem; background: #3a382f; color: #ccc;
+  }
+  .modal-batch-select input[type=number] {
+    width: 52px; padding: 3px 6px; border-radius: 6px; border: 1px solid #3a382f;
+    background: #131211; color: #eee;
+  }
+  .modal-box .confirm-btn { margin-top: 12px; }
+  .modal-empty { color: #999; font-size: 0.85rem; }
 </style>
 </head>
 <body>
 <div class="wrap">
+  <a class="back-link" href="/dashboard.html">← 回儀表板</a>
   <h1>字幕編輯（<span id="episode-label"></span>）</h1>
-  <div class="hint">拖動字幕框調整位置/寬度（藍色框，左右把手拉寬度）；下方逐句校對文字，點時間戳跳到影片對照。文字太長按「✂」分句（游標點在要斷開處再按），斷錯按「⌃」跟上一句合併，聽到贅詞/口誤框選文字後按「✂ 剪除選取片段」。所有動作停手 3 秒會自動存檔（含字幕位置）。改完按右下角「套用字幕」，會存檔並重新燒錄字幕到影片。</div>
+  <div class="hint">拖動字幕框調整位置/寬度（藍色框，左右把手拉寬度）；下方逐句校對文字，點時間戳跳到影片對照。文字太長按「✂」分句（游標點在要斷開處再按），斷錯按「⌃」跟上一句合併，聽到贅詞/口誤框選文字後按「✂ 剪除選取片段」。所有動作停手 3 秒會自動暫存（含字幕位置）。改完按右下角「🎬 套用字幕」，會先暫存，再重新燒錄字幕到影片。</div>
   <div class="stage" id="stage">
     <video id="video" controls></video>
     <div class="caption-box" id="captionBox">
@@ -148,6 +188,10 @@
       <label>字間距（Spacing）</label>
       <div class="row"><input type="range" id="spacing" min="0" max="12" step="0.5"><span class="val" id="spacingVal"></span></div>
     </div>
+    <div class="field">
+      <label>字體大小（Fontsize）</label>
+      <div class="row"><input type="range" id="fontSize" min="30" max="140" step="2"><span class="val" id="fontSizeVal"></span></div>
+    </div>
   </div>
   <div class="toolbar">
     <label>播放速度
@@ -166,19 +210,28 @@
     <div class="list" id="list"></div>
   </div>
   <div class="cuts-list" id="cutsList" style="display:none;">
-    <div class="cuts-title">待剪除的贅詞/口誤片段（存檔後才會真的在跳剪套用）：</div>
+    <div class="cuts-title">待剪除的贅詞/口誤片段（暫存後才會真的在跳剪套用）：</div>
     <div id="cutsItems"></div>
   </div>
 </div>
 <div class="floaty-actions">
   <span class="status" id="statusMsg"></span>
-  <span class="status" id="autosaveStatus" title="每停手 3 秒自動存檔一次（文字/位置/樣式都算）"></span>
+  <span class="status" id="autosaveStatus" title="每停手 3 秒自動暫存一次（文字/位置/樣式都算）"></span>
   <button id="undoBtn" title="復原上一步：復原上一次分句/合併/剪除選取片段（快捷鍵 Ctrl+Z，在文字框外按）" disabled>↩</button>
   <button id="cutSelectionBtn" title="剪除選取片段：先在文字框裡框選要刪掉的字，再按這個">✂</button>
-  <button id="saveBtn" title="儲存（快捷鍵 Ctrl+S）">💾</button>
-  <button id="applyBtn" title="套用字幕：存檔並重新燒錄字幕到影片">▶</button>
+  <button id="saveBtn" title="暫存（快捷鍵 Ctrl+S）">💾</button>
+  <button id="applyBtn" title="套用字幕：暫存並重新燒錄字幕到影片">🎬</button>
+  <button id="fillerBtn" title="③ 下一步：偵測贅詞（分析贅詞與靜音片段，跑完後回儀表板勾選要剪哪些）">🔍</button>
 </div>
-<button id="pauseBtn" class="floaty" title="暫停/播放（快捷鍵 Ctrl+Space）">⏸</button>
+<button id="pauseBtn" class="floaty" title="暫停/播放（快捷鍵 Ctrl+Space）">⏯</button>
+
+<div class="modal-overlay" id="fillerModal" style="display:none;">
+  <div class="modal-box">
+    <button class="modal-close" id="fillerModalClose" title="關閉">✕</button>
+    <h2>贅詞待確認</h2>
+    <div id="fillerModalBody"></div>
+  </div>
+</div>
 
 <script>
 const params = new URLSearchParams(location.search);
@@ -202,10 +255,12 @@ const textEl = document.getElementById("captionText");
 const marginVInput = document.getElementById("marginV");
 const marginLRInput = document.getElementById("marginLR");
 const spacingInput = document.getElementById("spacing");
+const fontSizeInput = document.getElementById("fontSize");
 const marginVVal = document.getElementById("marginVVal");
 const marginLRVal = document.getElementById("marginLRVal");
 const spacingVal = document.getElementById("spacingVal");
-let style = { MarginV: 60, MarginL: 120, MarginR: 120, Spacing: 2 };
+const fontSizeVal = document.getElementById("fontSizeVal");
+let style = { MarginV: 60, MarginL: 120, MarginR: 120, Spacing: 2, Fontsize: 70 };
 // PlayRes 假設 1920x1080，跟 config.py 一致
 const PLAY_RES_Y = 1080;
 const PLAY_RES_X = 1920;
@@ -213,8 +268,10 @@ const PLAY_RES_X = 1920;
 function applyStyleToUI() {
   marginVInput.value = style.MarginV;
   spacingInput.value = style.Spacing;
+  fontSizeInput.value = style.Fontsize;
   marginVVal.textContent = style.MarginV;
   spacingVal.textContent = style.Spacing;
+  fontSizeVal.textContent = style.Fontsize;
   renderBox();
 }
 
@@ -227,7 +284,7 @@ function renderBox() {
   const finalWidthPx = Math.max(60, widthPx);
   box.style.width = finalWidthPx + "px";
   textEl.style.letterSpacing = style.Spacing + "px";
-  const fontPx = (70 / PLAY_RES_Y) * stageH; // 對應 config.py Fontsize=70
+  const fontPx = (style.Fontsize / PLAY_RES_Y) * stageH;
   textEl.style.fontSize = Math.max(10, fontPx) + "px";
   const widthLabel = document.getElementById("widthLabel");
   const realWidthPx = Math.round((finalWidthPx / stageW) * PLAY_RES_X);
@@ -294,6 +351,7 @@ marginLRInput.addEventListener("input", () => {
   markDirty();
 });
 spacingInput.addEventListener("input", () => { style.Spacing = Number(spacingInput.value); applyStyleToUI(); markDirty(); });
+fontSizeInput.addEventListener("input", () => { style.Fontsize = Number(fontSizeInput.value); applyStyleToUI(); markDirty(); });
 window.addEventListener("resize", renderBox);
 
 // ---------- 復原（分句/合併/剪除選取片段）----------
@@ -537,12 +595,12 @@ function updateSaveStatus() {
   const el = document.getElementById("autosaveStatus");
   if (!el) return;
   if (dirty) {
-    el.textContent = "有未存檔的變更…";
+    el.textContent = "有未暫存的變更…";
   } else if (lastSavedAt) {
     const hh = String(lastSavedAt.getHours()).padStart(2, "0");
     const mm = String(lastSavedAt.getMinutes()).padStart(2, "0");
     const ss = String(lastSavedAt.getSeconds()).padStart(2, "0");
-    el.textContent = `已存檔 ${hh}:${mm}:${ss}`;
+    el.textContent = `已暫存 ${hh}:${mm}:${ss}`;
   }
 }
 
@@ -571,26 +629,30 @@ async function manualSave() {
   clearTimeout(autosaveTimer);
   const payload = await persistDraft();
   statusMsg.textContent = manualCuts.length
-    ? `已儲存 ${payload.length} 句字幕、${manualCuts.length} 段待剪除片段與字幕位置`
-    : `已儲存 ${payload.length} 句字幕與字幕位置`;
+    ? `已暫存 ${payload.length} 句字幕、${manualCuts.length} 段待剪除片段與字幕位置`
+    : `已暫存 ${payload.length} 句字幕與字幕位置`;
   setTimeout(() => statusMsg.textContent = "", 4000);
 }
 document.getElementById("saveBtn").addEventListener("click", manualSave);
 
 // ---------- 套用字幕：存檔後呼叫 /api/run/captions（跟儀表板④原本同一個 API），
 // 輪詢跟 dashboard.html 的 runStage() 是同一套簡單模式。---------- ----------
+const applyBtn = document.getElementById("applyBtn");
+const fillerBtn = document.getElementById("fillerBtn");
+
 async function applyCaptions() {
-  const applyBtn = document.getElementById("applyBtn");
   const statusMsg = document.getElementById("statusMsg");
   clearTimeout(autosaveTimer);
   await persistDraft();
   applyBtn.disabled = true;
+  fillerBtn.disabled = true;
   statusMsg.textContent = "排隊中…";
 
   const res = await fetch(`/api/run/captions?episode=${encodeURIComponent(episode)}`, { method: "POST" });
   const data = await res.json();
   if (!res.ok) {
     applyBtn.disabled = false;
+    fillerBtn.disabled = false;
     statusMsg.textContent = data.error || "無法送出工作";
     return;
   }
@@ -604,14 +666,180 @@ async function applyCaptions() {
     }
     clearInterval(poll);
     applyBtn.disabled = false;
+    fillerBtn.disabled = false;
     if (job.status === "error") {
       statusMsg.textContent = "套用失敗：" + job.message;
     } else {
-      statusMsg.textContent = "已套用字幕，回儀表板可以看到「字幕已匹配」";
+      statusMsg.innerHTML = '已套用字幕，<a href="/dashboard.html" style="color:#8fd39a;">回儀表板繼續下一步 →</a>';
     }
   }, 1200);
 }
-document.getElementById("applyBtn").addEventListener("click", applyCaptions);
+applyBtn.addEventListener("click", applyCaptions);
+
+// ---------- ③ 下一步：偵測贅詞。已經跑過的話直接開浮窗看結果，不用每次都重新跑一次
+// （贅詞偵測吃的是轉錄逐字稿，不會因為字幕校對而改變，重跑只會拿到一樣的結果）；
+// 浮窗裡另外留了「🔄 重新偵測」，真的需要重跑時自己按。----------
+async function runFillerDetect() {
+  const statusMsg = document.getElementById("statusMsg");
+  clearTimeout(autosaveTimer);
+  await persistDraft();
+  applyBtn.disabled = true;
+  fillerBtn.disabled = true;
+  statusMsg.textContent = "排隊中…";
+
+  const res = await fetch(`/api/run/filler_detect?episode=${encodeURIComponent(episode)}`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok) {
+    applyBtn.disabled = false;
+    fillerBtn.disabled = false;
+    statusMsg.textContent = data.error || "無法送出工作";
+    return;
+  }
+  const { job_id } = data;
+  const poll = setInterval(async () => {
+    const r = await fetch(`/api/job?id=${job_id}`);
+    const job = await r.json();
+    if (job.status === "queued" || job.status === "running") {
+      statusMsg.textContent = job.status === "running" ? "偵測中…" : "排隊中…";
+      return;
+    }
+    clearInterval(poll);
+    applyBtn.disabled = false;
+    fillerBtn.disabled = false;
+    if (job.status === "error") {
+      statusMsg.textContent = "偵測失敗：" + job.message;
+    } else {
+      statusMsg.textContent = "已偵測贅詞";
+      openFillerModal();
+    }
+  }, 1200);
+}
+fillerBtn.addEventListener("click", async () => {
+  const check = await fetch(`/api/filler?episode=${encodeURIComponent(episode)}`);
+  const checkData = await check.json();
+  if (checkData.detected) {
+    openFillerModal();
+  } else {
+    runFillerDetect();
+  }
+});
+
+// ---------- 贅詞待確認浮窗：內容/互動邏輯跟 dashboard.html 的 loadFlagged() 同一套，
+// 只是畫在這頁的 modal 裡，確認送出後關窗、不用離開字幕編輯頁。----------
+const fillerModal = document.getElementById("fillerModal");
+const fillerModalBody = document.getElementById("fillerModalBody");
+
+function closeFillerModal() {
+  fillerModal.style.display = "none";
+}
+document.getElementById("fillerModalClose").addEventListener("click", closeFillerModal);
+fillerModal.addEventListener("click", (e) => {
+  if (e.target === fillerModal) closeFillerModal();
+});
+
+function isApprovedItem(item, approved) {
+  return approved.some(a => a.word === item.word && a.start === item.start && a.end === item.end);
+}
+
+async function openFillerModal() {
+  const res = await fetch(`/api/filler?episode=${encodeURIComponent(episode)}`);
+  const data = await res.json();
+  const approved = data.approved || [];
+
+  const rerunLink = `<div style="margin-top:12px;">
+    <a href="#" data-rerun style="color:#8fa8d9; font-size:0.8rem;">🔄 重新偵測（原始轉錄沒變的話結果會一樣）</a>
+  </div>`;
+
+  if (!data.flagged || data.flagged.length === 0) {
+    fillerModalBody.innerHTML = (data.auto_cut && data.auto_cut.length
+      ? `<div class="modal-empty">高信心贅詞 ${data.auto_cut.length} 筆會自動剪，沒有待確認的贅詞。</div>`
+      : `<div class="modal-empty">沒有偵測到贅詞。</div>`) + rerunLink;
+  } else {
+    // 跳剪已經套用過的話，這份清單只是「當初偵測到的原始結果」，現在改勾選不會自動
+    // 反映到已經產出的跳剪影片——要讓使用者知道還得回儀表板重新套用「④ 套用跳剪」。
+    const jumpcutWarning = data.jumpcut_applied
+      ? `<div class="modal-flagged-item" style="border-left:3px solid #c0392b; padding-left:8px;">
+          <span class="txt">⚠ 跳剪已經套用過。這裡是偵測到的原始清單，如果現在更改勾選，
+          要回儀表板重新按「④ 套用跳剪」才會反映到影片，剛剛的跳剪版本不會自動更新。</span>
+        </div>`
+      : "";
+
+    const items = data.flagged.map((item, idx) => `
+      <div class="modal-flagged-item">
+        <input type="checkbox" data-idx="${idx}" ${isApprovedItem(item, approved) ? "checked" : ""}>
+        <span class="idx-label">#${idx}</span>
+        <span class="txt">${item.context_before}<b>【${item.word}】</b>${item.context_after}</span>
+      </div>
+    `).join("");
+
+    fillerModalBody.innerHTML = `
+      ${jumpcutWarning}
+      <div>待確認的贅詞（勾選要剪除的，不勾就永遠不會被剪；已勾選的是先前核准過的）：</div>
+      <div class="modal-batch-select">
+        <button type="button" data-select-all class="secondary">全選</button>
+        <button type="button" data-select-none class="secondary">全不選</button>
+        <span>範圍：第</span>
+        <input type="number" data-range-from min="0" max="${data.flagged.length - 1}" value="0">
+        <span>到第</span>
+        <input type="number" data-range-to min="0" max="${data.flagged.length - 1}" value="${data.flagged.length - 1}">
+        <span>筆</span>
+        <button type="button" data-select-range class="secondary">選取此範圍</button>
+      </div>
+      ${items}
+      <button data-confirm class="confirm-btn">確認送出</button>
+      ${rerunLink}
+    `;
+
+    const checkboxes = () => fillerModalBody.querySelectorAll('input[type=checkbox]');
+    fillerModalBody.querySelector("[data-select-all]").onclick = () => checkboxes().forEach(cb => cb.checked = true);
+    fillerModalBody.querySelector("[data-select-none]").onclick = () => checkboxes().forEach(cb => cb.checked = false);
+    fillerModalBody.querySelector("[data-select-range]").onclick = () => {
+      const from = Number(fillerModalBody.querySelector("[data-range-from]").value);
+      const to = Number(fillerModalBody.querySelector("[data-range-to]").value);
+      checkboxes().forEach(cb => {
+        const idx = Number(cb.dataset.idx);
+        if (idx >= Math.min(from, to) && idx <= Math.max(from, to)) cb.checked = true;
+      });
+    };
+    fillerModalBody.querySelector("[data-confirm]").onclick = async () => {
+      const checked = Array.from(checkboxes()).filter(cb => cb.checked).map(cb => Number(cb.dataset.idx));
+      await fetch(`/api/filler/confirm?episode=${encodeURIComponent(episode)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approve: checked }),
+      });
+      showJumpcutPrompt(checked.length);
+    };
+  }
+
+  fillerModalBody.querySelector("[data-rerun]").addEventListener("click", (e) => {
+    e.preventDefault();
+    closeFillerModal();
+    runFillerDetect();
+  });
+
+  fillerModal.style.display = "flex";
+}
+
+// ---------- 贅詞確認送出後，問要不要直接跳去儀表板套用跳剪。選是的話帶
+// ?episode=X&autorun=jumpcut 過去，dashboard.html 載完會自動開始跑，不用再點一次，
+// 過程中的「跳剪中…/跳剪完成」訊息由 dashboard.html 那邊的 runStage() 負責顯示。----------
+function showJumpcutPrompt(cutCount) {
+  fillerModalBody.innerHTML = `
+    <div>已確認 ${cutCount} 筆要剪除的贅詞。要現在跳轉回儀表板套用跳剪嗎？</div>
+    <div style="margin-top:14px; display:flex; gap:10px;">
+      <button data-goto-jumpcut>是，套用跳剪</button>
+      <button data-stay class="secondary">否，我再等等</button>
+    </div>
+  `;
+  fillerModalBody.querySelector("[data-goto-jumpcut]").onclick = () => {
+    location.href = `/dashboard.html?episode=${encodeURIComponent(episode)}&autorun=jumpcut`;
+  };
+  fillerModalBody.querySelector("[data-stay]").onclick = () => {
+    closeFillerModal();
+    document.getElementById("statusMsg").textContent = `已確認 ${cutCount} 筆要剪除的贅詞`;
+  };
+}
 
 // ---------- 框選文字剪除贅詞/口誤 ----------
 document.getElementById("cutSelectionBtn").addEventListener("mousedown", (e) => {
@@ -708,15 +936,9 @@ document.getElementById("speedSelect").addEventListener("change", (e) => {
 });
 
 const pauseBtn = document.getElementById("pauseBtn");
-function syncPauseBtn() {
-  pauseBtn.textContent = video.paused ? "▶" : "⏸";
-}
 pauseBtn.addEventListener("click", () => {
   if (video.paused) video.play(); else video.pause();
 });
-video.addEventListener("play", syncPauseBtn);
-video.addEventListener("pause", syncPauseBtn);
-syncPauseBtn();
 
 document.addEventListener("keydown", (e) => {
   if (e.code === "Space" && e.ctrlKey) {

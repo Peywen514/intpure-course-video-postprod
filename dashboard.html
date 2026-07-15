@@ -56,8 +56,9 @@
   button.secondary:hover { background:#e2ded4; }
   button.done { background:var(--accent); color:#fff; }
   button.done:hover { background:#1a5fd0; }
-  button:disabled { opacity:0.5; cursor:not-allowed; }
+  button:disabled { opacity:0.5; cursor:wait; }
   .job-msg { margin-top:10px; font-size:0.85rem; color:var(--soft); min-height:1.2em; }
+  .job-msg.active { color:var(--accent); font-weight:600; }
   .job-msg.err { color:var(--err); }
   .job-msg.skip { color:#a87f1a; }
   .flagged-list { margin-top:14px; border-top:1px solid var(--border); padding-top:12px; }
@@ -92,6 +93,30 @@
   .upload-box .upload-msg { font-size:0.82rem; color:var(--soft); }
   .clear-all-btn { margin-left:auto; background:var(--err); color:#fff; }
   .clear-all-btn:hover { background:#a02f22; }
+
+  .brand-box {
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:16px 22px; margin-bottom:22px;
+  }
+  .brand-box-title { font-size:0.9rem; font-weight:600; margin-bottom:10px; }
+  .brand-row {
+    display:flex; align-items:center; gap:10px; padding:6px 0; font-size:0.85rem;
+    border-bottom:1px solid var(--border);
+  }
+  .brand-row:last-child { border-bottom:none; }
+  .brand-row .brand-name { font-weight:600; min-width:140px; }
+  .brand-row .brand-status { color:var(--soft); }
+  .brand-row .brand-status.done { color:var(--ok); }
+  .brand-import-row {
+    display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; font-size:0.85rem;
+  }
+  .brand-import-row input[type=text] {
+    padding:6px 10px; border-radius:6px; border:1px solid var(--border); font-size:0.85rem;
+  }
+  #brandNameInput { width:160px; }
+  .brand-import-row input[id$="Path"] { flex:1; min-width:220px; }
+  .brand-import-msg { font-size:0.8rem; color:var(--soft); margin-top:6px; min-height:1.2em; }
+  .brand-import-msg.err { color:var(--err); }
 </style>
 </head>
 <body>
@@ -107,6 +132,24 @@
     <button id="clearAllBtn" class="clear-all-btn" title="清空 input/output/work，連原始影片都刪，重新測試用">🗑 清除全部重測</button>
   </div>
 
+  <div class="brand-box">
+    <div class="brand-box-title">🎬 片頭片尾版本管理（不同系列/講師可以各自上傳一套）</div>
+    <div id="brandList"></div>
+    <div class="brand-import-row">
+      <input type="text" id="brandNameInput" placeholder="品牌／系列名稱（例如 侯老師）">
+      <span>片頭路徑</span>
+      <input type="text" id="brandIntroPath" placeholder="這台電腦上的 intro 影片完整路徑">
+      <button data-import-kind="intro" class="brand-import-btn">匯入片頭</button>
+    </div>
+    <div class="brand-import-row">
+      <span style="min-width:0;"></span>
+      <span>片尾路徑</span>
+      <input type="text" id="brandOutroPath" placeholder="這台電腦上的 outro 影片完整路徑">
+      <button data-import-kind="outro" class="brand-import-btn">匯入片尾</button>
+    </div>
+    <div class="brand-import-msg" id="brandImportMsg"></div>
+  </div>
+
   <div class="layout">
     <div class="sidebar" id="sidebar"></div>
     <div class="detail" id="detail"></div>
@@ -116,14 +159,23 @@
 <script>
 const STAGE_LABELS = {
   transcribed: "轉錄",
-  caption_reviewed: "字幕已校對",
-  style_adjusted: "字幕位置已調整",
+  caption_reviewed: "字幕已編輯（校對／位置）",
   captioned: "字幕已匹配",
   filler_detected: "贅詞已偵測",
   filler_confirmed: "贅詞已確認",
   jumpcut: "跳剪已套用",
   final: "片頭尾已套用",
   qa_done: "品質檢查已跑過",
+};
+
+// 進度訊息用的階段動詞，取代籠統的「執行中…/完成」，讓使用者看得出目前在做哪一件事。
+const STAGE_VERBS = {
+  transcribe: "轉錄",
+  filler_detect: "偵測贅詞",
+  jumpcut: "跳剪",
+  bumper: "套用片頭尾",
+  qa: "品質檢查",
+  translate: "翻譯字幕",
 };
 
 document.getElementById("uploadBtn").addEventListener("click", () => {
@@ -193,6 +245,17 @@ let TRANSLATE_LANGS = [];
 let EPISODES = [];
 let selectedEpisode = null;
 
+// 跨渲染保留的「工作進行中」狀態，key 是集數名稱。切換側欄集數會整個重畫
+// #detail 底下的 DOM（見 renderDetail），舊按鈕/訊息文字節點會被丟棄，
+// 但輪詢不能跟著停或跟著看不見——所以進度狀態獨立存在這裡，
+// renderSidebar/renderDetail 每次重畫都會來查這份狀態決定要不要顯示「執行中」。
+let runningJobs = {}; // episode -> { jobId, stage, statusText }
+
+function liveDetailDiv(episode) {
+  const d = document.getElementById("detail");
+  return d.dataset.episode === episode ? d : null;
+}
+
 async function loadEpisodes() {
   const res = await fetch("/api/episodes");
   EPISODES = await res.json();
@@ -218,6 +281,64 @@ async function loadTranslateLangs() {
   TRANSLATE_LANGS = data.translate_langs || [];
 }
 
+let BRANDS = [];
+
+async function loadBrands() {
+  const res = await fetch("/api/brands");
+  BRANDS = await res.json();
+  renderBrandList();
+}
+
+function renderBrandList() {
+  const list = document.getElementById("brandList");
+  if (BRANDS.length === 0) {
+    list.innerHTML = '<div class="sidebar-empty">還沒有任何品牌，用下面的欄位匯入第一套片頭/片尾。</div>';
+    return;
+  }
+  list.innerHTML = BRANDS.map(b => `
+    <div class="brand-row">
+      <span class="brand-name">${b.name}</span>
+      <span class="brand-status ${b.has_intro ? "done" : ""}">${b.has_intro ? "✓ 片頭" : "✗ 片頭"}</span>
+      <span class="brand-status ${b.has_outro ? "done" : ""}">${b.has_outro ? "✓ 片尾" : "✗ 片尾"}</span>
+    </div>
+  `).join("");
+}
+
+async function importBrandAsset(kind) {
+  const msgEl = document.getElementById("brandImportMsg");
+  const brand = document.getElementById("brandNameInput").value.trim();
+  const pathInput = document.getElementById(kind === "intro" ? "brandIntroPath" : "brandOutroPath");
+  const sourcePath = pathInput.value.trim();
+
+  if (!brand || !sourcePath) {
+    msgEl.className = "brand-import-msg err";
+    msgEl.textContent = "品牌名稱跟路徑都要填";
+    return;
+  }
+
+  msgEl.className = "brand-import-msg";
+  msgEl.textContent = "匯入中…";
+  const res = await fetch("/api/brands/import_path", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ brand, kind, source_path: sourcePath }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    msgEl.className = "brand-import-msg err";
+    msgEl.textContent = data.error || "匯入失敗";
+    return;
+  }
+  msgEl.className = "brand-import-msg";
+  msgEl.textContent = `已匯入「${brand}」的${kind === "intro" ? "片頭" : "片尾"}`;
+  pathInput.value = "";
+  loadBrands();
+}
+
+document.querySelectorAll(".brand-import-btn").forEach(btn => {
+  btn.addEventListener("click", () => importBrandAsset(btn.dataset.importKind));
+});
+
 function episodeProgress(ep) {
   const keys = Object.keys(STAGE_LABELS);
   const done = keys.filter(k => ep[k]).length;
@@ -229,10 +350,14 @@ function renderSidebar() {
   sidebar.innerHTML = EPISODES.map(ep => {
     const { done, total } = episodeProgress(ep);
     const active = ep.episode === selectedEpisode;
+    const running = runningJobs[ep.episode];
+    const progressText = running
+      ? `⏳ ${running.statusText || "執行中…"}`
+      : `${done}/${total} 階段完成`;
     return `
       <div class="sidebar-item ${active ? "active" : ""}" data-episode="${ep.episode}">
         <div class="name">${ep.episode}</div>
-        <div class="progress-text">${done}/${total} 階段完成</div>
+        <div class="progress-text">${progressText}</div>
         <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${Math.round(done / total * 100)}%"></div></div>
       </div>`;
   }).join("");
@@ -268,7 +393,10 @@ function renderDetail(ep) {
       <button data-action="caption_studio" class="${ep.captioned ? "done" : ""}">② 編輯字幕（校對／位置／套用）</button>
       <button data-action="filler_detect" class="${ep.filler_detected ? "done" : ""}">③ 偵測贅詞</button>
       <button data-action="jumpcut" class="${ep.jumpcut ? "done" : ""}">④ 套用跳剪</button>
-      <button data-action="bumper" class="${ep.final ? "done" : ""}">⑤ 套用片頭尾</button>
+      ${BRANDS.length > 0
+        ? `<select data-brand-select title="選要套用哪一套片頭/片尾版本">${BRANDS.map(b => `<option value="${b.name}">${b.name}</option>`).join("")}</select>`
+        : ""}
+      <button data-action="bumper" class="${ep.final ? "done" : ""}" ${BRANDS.length === 0 ? "disabled title=\"尚無品牌，先在上方匯入片頭/片尾\"" : ""}>⑤ 套用片頭尾</button>
       <button data-action="qa" class="${ep.qa_done ? "done" : ""}">⑥ 品質檢查</button>
       ${TRANSLATE_LANGS.map(lang => `<button data-action="translate" data-lang="${lang}" class="${ep.translated_langs.includes(lang) ? "done" : ""}">⑦ 翻譯（${lang}）</button>`).join("")}
     </div>
@@ -278,15 +406,19 @@ function renderDetail(ep) {
     <div class="outputs-container">${renderOutputs(ep)}</div>
   `;
 
-  div.querySelector('[data-action="transcribe"]').onclick = () => runStage(div, ep.episode, "transcribe");
+  div.querySelector('[data-action="transcribe"]').onclick = () => runStage(ep.episode, "transcribe");
   div.querySelector('[data-action="caption_studio"]').onclick = () =>
     window.open(`/caption_studio.html?episode=${encodeURIComponent(ep.episode)}&video=input/${encodeURIComponent(ep.video)}`, "_blank");
-  div.querySelector('[data-action="filler_detect"]').onclick = () => runStage(div, ep.episode, "filler_detect");
-  div.querySelector('[data-action="jumpcut"]').onclick = () => runStage(div, ep.episode, "jumpcut");
-  div.querySelector('[data-action="bumper"]').onclick = () => runStage(div, ep.episode, "bumper");
-  div.querySelector('[data-action="qa"]').onclick = () => runStage(div, ep.episode, "qa");
+  div.querySelector('[data-action="filler_detect"]').onclick = () => runStage(ep.episode, "filler_detect");
+  div.querySelector('[data-action="jumpcut"]').onclick = () => runStage(ep.episode, "jumpcut");
+  div.querySelector('[data-action="bumper"]').onclick = () => {
+    // 按鈕在 BRANDS 為空時是 disabled 狀態，能點到這裡就代表 brandSelect 一定存在。
+    const brand = div.querySelector('[data-brand-select]').value;
+    runStage(ep.episode, "bumper", `&brand=${encodeURIComponent(brand)}`);
+  };
+  div.querySelector('[data-action="qa"]').onclick = () => runStage(ep.episode, "qa");
   div.querySelectorAll('[data-action="translate"]').forEach(btn => {
-    btn.onclick = () => runStage(div, ep.episode, "translate", `&lang=${encodeURIComponent(btn.dataset.lang)}`);
+    btn.onclick = () => runStage(ep.episode, "translate", `&lang=${encodeURIComponent(btn.dataset.lang)}`);
   });
 
   if (ep.filler_detected) {
@@ -294,6 +426,16 @@ function renderDetail(ep) {
   }
   if (ep.qa_done) {
     loadQaReport(div, ep.episode);
+  }
+
+  // 這集如果有工作正在跑（可能是切走前留下的，不是這次點按鈕才開始的），
+  // 重畫出來的新按鈕/訊息要立刻反映，不能等下一次 poll tick 才更新。
+  const running = runningJobs[ep.episode];
+  if (running) {
+    div.querySelectorAll("button").forEach(b => b.disabled = true);
+    const msgEl = div.querySelector(".job-msg");
+    msgEl.className = "job-msg active";
+    msgEl.textContent = running.statusText || "執行中…";
   }
 }
 
@@ -329,77 +471,130 @@ function renderOutputs(ep) {
   return `<div class="outputs-block"><div class="outputs-title">產出檔案：</div>${allRows.join("")}</div>`;
 }
 
-async function runStage(div, episode, stage, extraQuery = "") {
-  const msgEl = div.querySelector(".job-msg");
-  const buttons = div.querySelectorAll("button");
-  buttons.forEach(b => b.disabled = true);
-  msgEl.className = "job-msg";
-  msgEl.textContent = "排隊中…";
+function setJobMsg(episode, text, cls) {
+  runningJobs[episode] = runningJobs[episode] || {};
+  runningJobs[episode].statusText = text;
+  const live = liveDetailDiv(episode);
+  if (live) {
+    const msgEl = live.querySelector(".job-msg");
+    msgEl.className = cls ? `job-msg ${cls}` : "job-msg";
+    msgEl.textContent = text;
+  }
+  // 側欄的「執行中」徽章跟目前選中的集數無關，隨時都要能反映最新狀態
+  renderSidebar();
+}
+
+async function runStage(episode, stage, extraQuery = "") {
+  const verb = STAGE_VERBS[stage] || stage;
+
+  // 一開始就先進 runningJobs，這樣就算送出去之後、job_id 還沒拿到之前使用者就切走，
+  // 切回來 renderDetail 也查得到「有東西在跑」而不是顯示成一切正常的空白狀態。
+  runningJobs[episode] = { stage, statusText: `${verb}排隊中…` };
+  const liveNow = liveDetailDiv(episode);
+  if (liveNow) {
+    liveNow.querySelectorAll("button").forEach(b => b.disabled = true);
+    const msgEl = liveNow.querySelector(".job-msg");
+    msgEl.className = "job-msg active";
+    msgEl.textContent = `${verb}排隊中…`;
+  }
+  renderSidebar();
 
   const res = await fetch(`/api/run/${stage}?episode=${encodeURIComponent(episode)}${extraQuery}`, { method: "POST" });
   const data = await res.json();
   if (!res.ok) {
-    buttons.forEach(b => b.disabled = false);
-    msgEl.className = "job-msg err";
-    msgEl.textContent = data.error || "無法送出工作";
+    delete runningJobs[episode];
+    const live = liveDetailDiv(episode);
+    if (live) {
+      live.querySelectorAll("button").forEach(b => b.disabled = false);
+      const msgEl = live.querySelector(".job-msg");
+      msgEl.className = "job-msg err";
+      msgEl.textContent = data.error || "無法送出工作";
+    }
+    renderSidebar();
     return;
   }
   const { job_id } = data;
+  runningJobs[episode].jobId = job_id;
 
   const poll = setInterval(async () => {
     const r = await fetch(`/api/job?id=${job_id}`);
     const job = await r.json();
 
     if (job.status === "queued") {
-      msgEl.textContent = job.position > 0 ? `排隊中，前面還有 ${job.position} 個工作` : "排隊中…";
+      setJobMsg(episode, job.position > 0 ? `${verb}排隊中，前面還有 ${job.position} 個工作` : `${verb}排隊中…`, "active");
       return;
     }
     if (job.status === "running") {
-      msgEl.textContent = "執行中…";
+      setJobMsg(episode, `${verb}中…`, "active");
       return;
     }
 
     clearInterval(poll);
-    buttons.forEach(b => b.disabled = false);
+    delete runningJobs[episode];
+
+    const live = liveDetailDiv(episode);
+    if (live) live.querySelectorAll("button").forEach(b => b.disabled = false);
 
     if (job.status === "error") {
-      msgEl.className = "job-msg err";
-      msgEl.textContent = "失敗: " + job.message;
+      if (live) {
+        const msgEl = live.querySelector(".job-msg");
+        msgEl.className = "job-msg err";
+        msgEl.textContent = `${verb}失敗: ` + job.message;
+      }
+      renderSidebar();
       return;
     }
 
-    if (job.result && job.result.skipped) {
-      msgEl.className = "job-msg skip";
-      msgEl.textContent = "沒有實際套用：" + job.result.reason;
-    } else if (job.result && job.result.warning) {
-      msgEl.className = "job-msg skip";
-      msgEl.textContent = "完成，但請注意：" + job.result.warning;
-    } else {
-      msgEl.className = "job-msg";
-      msgEl.textContent = "完成";
+    if (live) {
+      const msgEl = live.querySelector(".job-msg");
+      if (job.result && job.result.skipped) {
+        msgEl.className = "job-msg skip";
+        msgEl.textContent = "沒有實際套用：" + job.result.reason;
+      } else if (job.result && job.result.warning) {
+        msgEl.className = "job-msg skip";
+        msgEl.textContent = `${verb}完成，但請注意：` + job.result.warning;
+      } else {
+        msgEl.className = "job-msg";
+        msgEl.textContent = `${verb}完成`;
+      }
     }
-    if (stage === "filler_detect") loadFlagged(div, episode);
-    if (stage === "qa") loadQaReport(div, episode);
-    // 重新整理整個列表以更新徽章與輸出連結
+    if (stage === "filler_detect" && live) loadFlagged(live, episode);
+    if (stage === "qa" && live) loadQaReport(live, episode);
+    renderSidebar();
+    // 重新整理整個列表以更新徽章與輸出連結（會連帶重畫目前選中集數的 detail）
     setTimeout(loadEpisodes, 300);
   }, 1200);
+}
+
+function isApprovedItem(item, approved) {
+  return approved.some(a => a.word === item.word && a.start === item.start && a.end === item.end);
 }
 
 async function loadFlagged(div, episode) {
   const res = await fetch(`/api/filler?episode=${encodeURIComponent(episode)}`);
   const data = await res.json();
   const area = div.querySelector(".flagged-area");
+  const approved = data.approved || [];
 
   if (!data.flagged || data.flagged.length === 0) {
     area.innerHTML = data.auto_cut && data.auto_cut.length
-      ? `<div class="flagged-list">高信心贅詞 ${data.auto_cut.length} 筆會自動剪，沒有模糊詞需要確認。</div>`
+      ? `<div class="flagged-list">高信心贅詞 ${data.auto_cut.length} 筆會自動剪，沒有待確認的贅詞。</div>`
       : "";
     return;
   }
 
+  // 跳剪已經套用過的話，這份清單只是「當初偵測到的原始結果」，現在勾選不會自動
+  // 反映到已經產出的跳剪影片——要讓使用者知道改勾選之後還得回頭重新套用跳剪。
+  const jumpcutWarning = data.jumpcut_applied
+    ? `<div class="flagged-item" style="border-left-color:var(--err);">
+        <span class="txt">⚠ 跳剪已經套用過。這裡是偵測到的原始清單，如果現在更改勾選，
+        要重新按「④ 套用跳剪」才會反映到影片，剛剛的跳剪版本不會自動更新。</span>
+      </div>`
+    : "";
+
   const items = data.flagged.map((item, idx) => `
     <div class="flagged-item">
-      <input type="checkbox" data-idx="${idx}">
+      <input type="checkbox" data-idx="${idx}" ${isApprovedItem(item, approved) ? "checked" : ""}>
       <span class="idx-label">#${idx}</span>
       <span class="txt">${item.context_before}<b>【${item.word}】</b>${item.context_after}</span>
     </div>
@@ -407,7 +602,8 @@ async function loadFlagged(div, episode) {
 
   area.innerHTML = `
     <div class="flagged-list">
-      <div>模糊詞待確認（勾選要剪除的，不勾就永遠不會被剪）：</div>
+      ${jumpcutWarning}
+      <div>待確認的贅詞（勾選要剪除的，不勾就永遠不會被剪；已勾選的是先前核准過的）：</div>
       <div class="batch-select">
         <button type="button" data-select-all class="secondary">全選</button>
         <button type="button" data-select-none class="secondary">全不選</button>
@@ -492,7 +688,25 @@ async function loadQaReport(div, episode) {
   `;
 }
 
-loadTranslateLangs().then(loadEpisodes);
+// 從字幕編輯頁點「是，套用跳剪」跳轉過來時帶 ?episode=X&autorun=jumpcut，
+// 載完集數清單後自動選中該集並直接開始跑，不用使用者再點一次按鈕。
+// 用完就把網址參數清掉（history.replaceState），避免重新整理頁面又重跑一次。
+async function handleAutorun() {
+  const params = new URLSearchParams(location.search);
+  const autorunEpisode = params.get("episode");
+  const autorunStage = params.get("autorun");
+  if (!autorunEpisode || !autorunStage) return;
+
+  history.replaceState(null, "", location.pathname);
+  if (!EPISODES.some(e => e.episode === autorunEpisode)) return;
+
+  selectedEpisode = autorunEpisode;
+  renderSidebar();
+  renderDetail(EPISODES.find(e => e.episode === autorunEpisode));
+  runStage(autorunEpisode, autorunStage);
+}
+
+Promise.all([loadTranslateLangs(), loadBrands()]).then(loadEpisodes).then(handleAutorun);
 </script>
 </body>
 </html>

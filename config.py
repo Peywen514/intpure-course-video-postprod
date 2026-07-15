@@ -12,7 +12,7 @@ DEFAULT_BRAND = "default"
 
 # ASS 字幕樣式預設值（1920x1080 課程影片）。
 # Fontname 集中在這裡，之後要換成其他可商用授權開源字體只改這一個值。
-# MarginV / MarginL / MarginR / Spacing 是 picker 工具可個別調整的欄位；
+# MarginV / MarginL / MarginR / Spacing / Fontsize 是 picker 工具可個別調整的欄位；
 # 沒有 work/<episode>/style_override.json 時就用這組預設值。
 CAPTION_STYLE = {
     "Name": "Cap",
