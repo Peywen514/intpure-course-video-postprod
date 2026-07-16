@@ -12,6 +12,19 @@
 - （可選）字幕翻譯功能需要環境變數 `GOOGLE_TRANSLATE_API_KEY`（GCP 專案開通 Cloud Translation API 後建立的金鑰）。沒設定這個變數也不影響其他階段，只有按下「翻譯」按鈕時才會用到，未設定時會顯示缺金鑰的錯誤訊息。目標語言清單在 `config.py` 的 `TRANSLATE_TARGET_LANGS`。
 - （可選）B-Roll 素材搜尋功能需要環境變數 `PEXELS_API_KEY`（[pexels.com/api](https://www.pexels.com/api/) 免費申請）。用途：拿字幕文字當關鍵字去 Pexels 搜尋免費商用影片素材下載，不是生成式 AI。授權查證見 `THIRD_PARTY_NOTICES.md`——內容免標註但 API 使用條款要求顯著連結回 Pexels，發布最終影片時記得在說明欄/致謝名單附上。
 
+## 同事安裝（3 步驟）
+
+1. 裝 [Python 3.9+](https://www.python.org/downloads/)（安裝時記得勾選 "Add python.exe to PATH"）
+2. 開命令提示字元，執行：
+   ```bash
+   git clone https://github.com/intpure/intpure-course-video-postprod.git
+   cd intpure-course-video-postprod
+   winget install Gyan.FFmpeg
+   ```
+3. 雙擊資料夾裡的 `啟動儀表板.bat`——第一次執行會自動安裝所需的 Python 套件（需要網路，約幾分鐘），之後每次雙擊直接開啟儀表板網頁
+
+> ⚠️ 這個 repo 目前暫時設為 public 方便同事 clone，下載完畢後會改回 private，請勿另外散布連結。
+
 ## 使用方式（推薦：儀表板網頁）
 
 1. **雙擊 `啟動儀表板.bat`**（或手動打 `python app.py`）— 會開一個黑色視窗＋自動跳出瀏覽器（預設 http://127.0.0.1:8080/）；不想用的時候關掉那個黑色視窗即可停止伺服器
@@ -21,7 +34,7 @@
 
 不需要打指令、不需要知道背後跑的是哪支 Python 檔、也不用自己找資料夾複製檔案——雙擊 `.bat`、網頁上傳影片、點按鈕即可。
 
-`啟動儀表板.bat` 會自動把 winget 裝的 ffmpeg 路徑補進當次執行的 PATH（這台機器的系統 PATH 目前還沒真的刷新到新開的視窗，所以用這個方式繞開，不依賴系統設定）。若要在別台電腦上用，該台機器需要先自行安裝 Python 3.9+ 與 ffmpeg（`winget install Gyan.FFmpeg`），且 `啟動儀表板.bat` 裡寫死的 ffmpeg 路徑可能要依該機器實際安裝路徑調整——**目前這個 `.bat` 只在本機驗證過，還沒打包成能直接在別人電腦上開箱即用的安裝檔**，之後真的要給同事用時再處理。
+`啟動儀表板.bat` 會依序檢查 Python / ffmpeg 是否在 PATH 上；若 ffmpeg 不在 PATH，會改用萬用字元自動搜尋 winget 安裝的 `Gyan.FFmpeg` 資料夾（不寫死版本號，不同機器裝到不同 ffmpeg 版本也找得到）；若必要的 Python 套件（faster-whisper / stable-ts / auto-editor）還沒裝，第一次執行會自動 `pip install -r requirements.txt`。三項都找不到才會顯示對應的錯誤訊息並中止。**這幾個檢查/自動修復的邏輯已個別做過隔離測試**[unit-test]，但完整流程目前只在本機這台機器實測跑通過[manual-check]，還沒有同事在自己電腦上實際跑過一輪——第一次拿去給同事用時，建議在旁邊看著跑一次，確認沒有卡在環境差異（例如字型、防毒軟體攔截等）上。
 
 ## 使用方式（進階：命令列，逐一手動跑）
 
