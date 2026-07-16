@@ -315,7 +315,6 @@ let segments = [];   // [{id, start, end, text, originalText}]，依 start 排�
 let idCounter = 0;
 let activeId = null;
 let manualCuts = [];  // [{start, end, word}]，使用者框選標記要剪掉的贅詞/口誤
-let lastInputAt = 0;  // 最近一次在文字框裡打字的時間戳，判斷「是不是正在打字」用（見 updateActiveRow）
 
 // ---------- 字幕位置/寬度/字距（來自原 picker/index.html）----------
 const stage = document.getElementById("stage");
@@ -492,22 +491,16 @@ function updateActiveRow() {
       if (row) {
         row.classList.add("active");
         row.classList.remove("passed");
-        const recentlyTyped = Date.now() - lastInputAt < 3000;
-        // 原本只擋「最近 3 秒內打過字」，但使用者框選文字（例如要剪掉某個字）不算
-        // 「打字」、lastInputAt 不會更新——影片背景播放跨到下一句時間點，就會把
-        // 正在框選的文字框搶走焦點、游標重置到最後一個字，框選的範圍整個消失
-        // （2026-07-16 同事實測回報：要剪 0:48.3 的「我」，選取直接跳掉）。
-        // 改成只要目前焦點還在任何一個文字框裡，就不搶焦點，不限「最近打過字」。
-        const userInTextarea = document.activeElement && document.activeElement.tagName === "TEXTAREA";
-        if (!recentlyTyped && !userInTextarea) {
-          row.scrollIntoView({ behavior: "smooth", block: "center" });
-          const ta = row.querySelector("textarea");
-          if (ta) {
-            ta.focus();
-            const len = ta.value.length;
-            ta.setSelectionRange(len, len);
-          }
-        }
+        // 業界規則（2026-07-16 查證：Aegisub、BBC 開源的 react-transcript-editor、
+        // YouTube Studio、Descript 都是這個做法，見 ops/PITFALLS.md 分類 H）：
+        // 播放位置（timeupdate 觸發的這個函式）永遠不碰 focus() 或文字選取範圍，
+        // 只能捲動可視範圍、改高亮樣式——這樣使用者在前面的句子打字/框選時，
+        // 播放繼續往後跑不會打斷他手上的動作。真正的編輯焦點只能由使用者的明確
+        // 動作觸發（點某一句、按上一句/下一句快捷鍵，見 stepSegment 的 focusText）。
+        // 之前用「最近有沒有打字」「焦點是不是在文字框」這種時間戳/狀態去猜測要不要
+        // 搶焦點，猜漏的情境還是會把使用者正在框選的文字搶走（見同一份 PITFALLS
+        // 記錄的實際案例：框選要剪的字，播放一跨過下一句就整個消失）。
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
   }
@@ -587,7 +580,6 @@ function render() {
   });
   list.querySelectorAll("textarea").forEach(ta => {
     ta.oninput = () => {
-      lastInputAt = Date.now();
       markDirty();
       const seg = segments.find(s => String(s.id) === ta.dataset.id);
       if (!seg) return;
