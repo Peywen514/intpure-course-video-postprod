@@ -5,24 +5,35 @@
 講者換氣的地方被硬接在一起。
 
 在這兩個硬條件之上，另外做斷點品質控管（見 _eligible_break）：硬斷點如果會腰斬
-config.NEVER_SPLIT_TERMS 裡的詞、讓下一行以虛詞開頭、或把連接詞留在行尾，就往前
-回溯找上一個「合格」的斷點；回溯不到（例如整段話中間完全沒有空隙可退）就 fallback
-維持原本的硬斷，不讓斷句因為找不到完美斷點而失敗或丟例外。
+「不能斷開的詞」（config.NEVER_SPLIT_TERMS 手動登記的 + corrections_glossary.json
+裡使用者校對學到、長度 > 1 的正確詞，見 _unsplittable_terms）、讓下一行以虛詞開頭、
+或把連接詞留在行尾，就往前回溯找上一個「合格」的斷點；回溯不到（例如整段話中間
+完全沒有空隙可退）就 fallback 維持原本的硬斷，不讓斷句因為找不到完美斷點而失敗或丟例外。
 """
 
 from config import CONNECTIVE_WORDS, HEAD_DANGLER_CHARS, NEVER_SPLIT_TERMS
+from lib.glossary import load_glossary
 
 
-# 「不能從中間腰斬」的詞：除了 NEVER_SPLIT_TERMS（複合詞/專有名詞）之外，連接詞本身
-# 也不該被斷句從中間切開（例如「所以」不能斷成「所」|「以」），否則回溯找斷點時，
-# 為了不把連接詞留在行尾，反而把連接詞自己切成兩半，比原本的硬斷還糟。
-_UNSPLITTABLE_TERMS = list(NEVER_SPLIT_TERMS) + list(CONNECTIVE_WORDS)
+def _unsplittable_terms():
+    """「不能從中間腰斬」的詞：config.NEVER_SPLIT_TERMS（複合詞/專有名詞）+ CONNECTIVE_WORDS
+    （連接詞本身也不該被斷句從中間切開，例如「所以」不能斷成「所」|「以」，否則回溯找斷點
+    時，為了不把連接詞留在行尾，反而把連接詞自己切成兩半，比原本的硬斷還糟）。
+
+    再加上 corrections_glossary.json 裡使用者校對過、長度 > 1 的正確詞——多字修正結果
+    代表系統已經「認得」這是一個完整詞，理當跟 NEVER_SPLIT_TERMS 一樣受保護，不用使用者
+    在 config.py 重複手動登記一次；單一字元的修正（例如「藍」→「欄」）不需要保護，一個字
+    不會有「從中間腰斬」的問題。刻意不快取、每次呼叫都重新讀檔：glossary 檔案很小，
+    group_words() 一個集數只呼叫一次，沒必要為了效能犧牲「校對完下一次產字幕就生效」。
+    """
+    learned = [v["correct"] for v in load_glossary().values() if len(v["correct"]) > 1]
+    return list(NEVER_SPLIT_TERMS) + list(CONNECTIVE_WORDS) + learned
 
 
-def _splits_unsplittable_term(left_text, right_text):
-    """判斷斷點是不是剛好卡在 _UNSPLITTABLE_TERMS 裡某個詞的中間：詞的前半段落在
+def _splits_unsplittable_term(left_text, right_text, unsplittable_terms):
+    """判斷斷點是不是剛好卡在 unsplittable_terms 裡某個詞的中間：詞的前半段落在
     斷點左邊文字的尾端、後半段落在斷點右邊文字的開頭，兩段都非空才算腰斬。"""
-    for term in _UNSPLITTABLE_TERMS:
+    for term in unsplittable_terms:
         for p in range(1, len(term)):
             prefix, suffix = term[:p], term[p:]
             if left_text.endswith(prefix) and right_text.startswith(suffix):
@@ -30,12 +41,12 @@ def _splits_unsplittable_term(left_text, right_text):
     return False
 
 
-def _eligible_break(left_text, right_text):
+def _eligible_break(left_text, right_text, unsplittable_terms):
     """斷點兩側文字（左邊到斷點為止、右邊從斷點開始）是否「合格」：
     不腰斬複合詞/連接詞本身、下一行不以虛詞開頭、完整的連接詞不留在行尾。"""
     if not left_text or not right_text:
         return False
-    if _splits_unsplittable_term(left_text, right_text):
+    if _splits_unsplittable_term(left_text, right_text, unsplittable_terms):
         return False
     if right_text[0] in HEAD_DANGLER_CHARS:
         return False
@@ -53,6 +64,7 @@ def group_words(words, max_chars=24, max_gap=0.6):
     """
     events = []
     buf = []  # 目前正在累積、還沒斷句的 word dict 清單
+    unsplittable_terms = _unsplittable_terms()  # 每個集數呼叫一次，讀當下最新的 glossary
 
     def _text(ws):
         return "".join(w["word"] for w in ws)
@@ -76,7 +88,7 @@ def group_words(words, max_chars=24, max_gap=0.6):
         半截，會漏掉「詞的後半段其實是下一個還沒進 buf 的字」這種情況。"""
         left_text = _text(buf[: k + 1])
         right_text = _text(buf[k + 1 :]) + pending_text
-        return _eligible_break(left_text, right_text)
+        return _eligible_break(left_text, right_text, unsplittable_terms)
 
     def _backtrack(pending_text):
         """從目前 buf 尾端往回找一個合格斷點的索引 k（buf[k]|buf[k+1] 是斷點）。
@@ -96,7 +108,7 @@ def group_words(words, max_chars=24, max_gap=0.6):
 
         if buf and (gap > max_gap or line_len > max_chars):
             # 硬斷點就卡在 buf 最後一個字跟即將加入的 w 之間，先看這個位置本身合不合格。
-            if _eligible_break(_text(buf), word_text):
+            if _eligible_break(_text(buf), word_text, unsplittable_terms):
                 flush()
             else:
                 k = _backtrack(word_text)
