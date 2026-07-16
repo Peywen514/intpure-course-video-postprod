@@ -14,8 +14,8 @@
   .back-link:hover { text-decoration:underline; }
   .hint { color:#999; font-size:0.8rem; margin-bottom:14px; }
   .stage {
-    position: relative; width: 100%; aspect-ratio: 16/9;
-    background: #000; border-radius: 8px; overflow: hidden; margin-bottom:10px;
+    position: relative; width: 100%; max-width: 560px; aspect-ratio: 16/9;
+    background: #000; border-radius: 8px; overflow: hidden; margin: 0 auto 10px;
   }
   video { width: 100%; height:100%; display: block; }
 
@@ -58,7 +58,11 @@
     padding:4px 8px; font-size:0.85rem;
   }
   .teleprompter {
-    height: 240px; overflow-y: auto; scroll-behavior: smooth;
+    /* 影片預覽區改小之後（見 .stage 的 max-width），這裡改用視窗高度扣掉上面其他
+       區塊的估計高度，讓文字校對區跟著長，不要固定卡在一個小數字，不然畫面越大
+       這裡浪費的空間越多；min-height 是視窗很矮時的下限，至少看得到 2~3 句。 */
+    height: calc(100vh - 580px); min-height: 320px;
+    overflow-y: auto; scroll-behavior: smooth;
     border:1px solid #3a382f; border-radius:8px; padding:6px; background:#17160f;
   }
   .list { display:flex; flex-direction:column; gap:2px; }
