@@ -47,7 +47,7 @@
     gap: 10px; margin-bottom: 12px;
   }
   .style-controls .field { background:#26241f; border-radius:8px; padding:8px 12px; }
-  .style-controls .field label { display:block; font-size:0.72rem; color:#aaa; margin-bottom:4px; }
+  .style-controls .field label { display:block; font-size:0.72rem; color:#aaa; margin-bottom:4px; cursor:help; }
   .style-controls .field .row { display:flex; align-items:center; gap:8px; }
   .style-controls .field input[type=range] { flex:1; }
   .style-controls .field .val { width:38px; text-align:right; font-variant-numeric: tabular-nums; font-size:0.85rem; }
@@ -194,23 +194,23 @@
   </div>
   <div class="style-controls">
     <div class="field">
-      <label>高度（MarginV，離底部距離，越大越高）</label>
+      <label title="MarginV，離底部距離，越大越高">高度</label>
       <div class="row"><input type="range" id="marginV" min="20" max="400" step="2"><span class="val" id="marginVVal"></span></div>
     </div>
     <div class="field">
-      <label>寬度（左右邊界 MarginL/MarginR，越小越寬）</label>
+      <label title="左右邊界 MarginL/MarginR，越小越寬">寬度</label>
       <div class="row"><input type="range" id="marginLR" min="20" max="400" step="2"><span class="val" id="marginLRVal"></span></div>
     </div>
     <div class="field">
-      <label>字間距（Spacing）</label>
+      <label title="Spacing">字間距</label>
       <div class="row"><input type="range" id="spacing" min="0" max="12" step="0.5"><span class="val" id="spacingVal"></span></div>
     </div>
     <div class="field">
-      <label>字體大小（Fontsize）</label>
+      <label title="Fontsize">字體大小</label>
       <div class="row"><input type="range" id="fontSize" min="30" max="140" step="2"><span class="val" id="fontSizeVal"></span></div>
     </div>
     <div class="field">
-      <label>黑框粗細（Outline）</label>
+      <label title="黑框粗細 Outline">字框</label>
       <div class="row"><input type="range" id="outline" min="0" max="10" step="0.5"><span class="val" id="outlineVal"></span></div>
     </div>
   </div>
@@ -1008,8 +1008,8 @@ document.addEventListener("keydown", (e) => {
 
 const SHORTCUT_ACTIONS = {
   pausePlay:   { label: "播放 / 暫停", fn: togglePause,           allowInTextarea: false },
-  nextSegment: { label: "跳到下一句",   fn: () => stepSegment(1, { focusText: true }),  allowInTextarea: true },
-  prevSegment: { label: "跳到上一句",   fn: () => stepSegment(-1, { focusText: true }), allowInTextarea: true },
+  nextSegment: { label: "跳到下一句",   fn: (e) => stepSegment(1, { focusText: true, fromEvent: e }),  allowInTextarea: true },
+  prevSegment: { label: "跳到上一句",   fn: (e) => stepSegment(-1, { focusText: true, fromEvent: e }), allowInTextarea: true },
 };
 const DEFAULT_KEYMAP = {
   pausePlay: "Space",
@@ -1055,7 +1055,7 @@ document.addEventListener("keydown", (e) => {
     const spec = SHORTCUT_ACTIONS[action];
     if (!spec || (inTextarea && !spec.allowInTextarea)) continue;
     e.preventDefault();
-    spec.fn();
+    spec.fn(e);
     break;
   }
 });
@@ -1076,9 +1076,21 @@ video.addEventListener("timeupdate", () => {
 // 事件非同步觸發才更新 activeId——這裡是使用者明確按下一步/上一步，直接同步更新
 // active row 高亮跟（要求的話）文字框焦點，不用等事件跑一輪；updateActiveRow 之後
 // 收到 seeked 事件時看到 activeId 已經對了，會自動跳過重複處理。
+//
+// opts.fromEvent：從鍵盤快捷鍵觸發、且當下焦點在某一句的文字框裡時，「下一句/上一句」
+// 要以「使用者正在改的那一句」為基準，不能用 activeId——activeId 是跟著影片播放位置
+// 跑的，影片在背景持續播放時，使用者可能正在改第 3 句、但 activeId 已經因為影片播到
+// 別的時間點而變成第 5 句，這時候按 Enter 如果用 activeId 當基準，會從第 5 句跳到
+// 第 6 句，而不是使用者以為的「從第 3 句跳到第 4 句」（2026-07-16 同事實測回報）。
 function stepSegment(dir, opts = {}) {
   if (!segments.length) return;
-  const curIdx = segments.findIndex(s => s.id === activeId);
+  let baseId = activeId;
+  const focusedTa = opts.fromEvent && opts.fromEvent.target;
+  if (focusedTa && focusedTa.tagName === "TEXTAREA" && focusedTa.dataset.id) {
+    const editingSeg = segments.find(s => String(s.id) === focusedTa.dataset.id);
+    if (editingSeg) baseId = editingSeg.id;
+  }
+  const curIdx = segments.findIndex(s => s.id === baseId);
   // 還沒開始播放、activeId 還沒設定時（curIdx===-1），不管往前往後都該先落在第一句，
   // 不能讓 baseIdx 直接當成 0 再加 dir，那樣往下一句會直接跳過第 0 句。
   const baseIdx = curIdx === -1 ? -dir : curIdx;

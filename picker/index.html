@@ -74,7 +74,7 @@
     gap: 14px;
   }
   .field { background:#26241f; border-radius:8px; padding:10px 14px; }
-  .field label { display:block; font-size:0.75rem; color:#aaa; margin-bottom:6px; }
+  .field label { display:block; font-size:0.75rem; color:#aaa; margin-bottom:6px; cursor:help; }
   .field .row { display:flex; align-items:center; gap:10px; }
   .field input[type=range] { flex:1; }
   .field .val { width:42px; text-align:right; font-variant-numeric: tabular-nums; }
@@ -103,28 +103,28 @@
 
   <div class="controls">
     <div class="field">
-      <label>高度（MarginV，離底部距離，越大越高）</label>
+      <label title="MarginV，離底部距離，越大越高">高度</label>
       <div class="row">
         <input type="range" id="marginV" min="20" max="400" step="2">
         <span class="val" id="marginVVal"></span>
       </div>
     </div>
     <div class="field">
-      <label>寬度（左右邊界 MarginL/MarginR，越小越寬）</label>
+      <label title="左右邊界 MarginL/MarginR，越小越寬">寬度</label>
       <div class="row">
         <input type="range" id="marginLR" min="20" max="400" step="2">
         <span class="val" id="marginLRVal"></span>
       </div>
     </div>
     <div class="field">
-      <label>字間距（Spacing）</label>
+      <label title="Spacing">字間距</label>
       <div class="row">
         <input type="range" id="spacing" min="0" max="12" step="0.5">
         <span class="val" id="spacingVal"></span>
       </div>
     </div>
     <div class="field">
-      <label>黑框粗細（Outline）</label>
+      <label title="黑框粗細 Outline">字框</label>
       <div class="row">
         <input type="range" id="outline" min="0" max="10" step="0.5">
         <span class="val" id="outlineVal"></span>
