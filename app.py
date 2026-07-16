@@ -384,9 +384,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if not safe_brand or kind not in ("intro", "outro"):
             return self._send_json({"error": "品牌名稱或類型不正確"}, status=400)
 
-        src = Path(source_path)
+        # Windows「複製路徑」對檔案會自動加上一組雙引號，直接貼進輸入框會讓路徑字串
+        # 多出頭尾的 " 字元、比對不到真實檔案，先剝掉頭尾引號再判斷。
+        cleaned_path = source_path.strip().strip('"').strip("'")
+        src = Path(cleaned_path)
+        if src.is_dir():
+            return self._send_json({
+                "error": f"這是資料夾路徑，不是影片檔案：{cleaned_path}\n"
+                         "請貼資料夾裡「實際那支影片檔」的完整路徑（要包含檔名跟副檔名，例如 "
+                         f"{cleaned_path}\\outro.mp4），不是資料夾本身。"
+            }, status=400)
         if not src.is_file():
-            return self._send_json({"error": f"找不到檔案：{source_path}"}, status=400)
+            return self._send_json({"error": f"找不到檔案：{cleaned_path}"}, status=400)
         if src.suffix.lower() not in {".mp4", ".mov", ".mkv", ".avi", ".m4v"}:
             return self._send_json({"error": "檔案格式不支援"}, status=400)
 
