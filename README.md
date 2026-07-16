@@ -23,7 +23,18 @@
    ```
 3. 雙擊資料夾裡的 `啟動儀表板.bat`——第一次執行會自動安裝所需的 Python 套件（需要網路，約幾分鐘），之後每次雙擊直接開啟儀表板網頁
 
-> ⚠️ 這個 repo 目前暫時設為 public 方便同事 clone，下載完畢後會改回 private，請勿另外散布連結。
+> ⚠️ 這個 repo 平常設為 private，同事要 clone 前需先暫時轉 public，下載完畢後記得改回來——完整判斷依據見下方「分享/公開前檢查清單」。
+
+## 分享/公開前檢查清單
+
+之後每次要開放這個 repo（暫時轉 public 給同事 clone，或其他分享方式）之前，照這份清單過一次：
+
+1. **依賴授權都是寬鬆授權，程式碼本身可以分享**——`faster-whisper`／`stable-ts`／`auto-editor`／`torch`／`openai-whisper` 都是 MIT/Unlicense/Apache/BSD 這類允許自由散布、修改、商用的授權，沒有會強迫本專案程式碼也要開源的條款。完整清單見 `THIRD_PARTY_NOTICES.md`。
+2. **FFmpeg（GPLv3）的限制範圍很窄，不影響分享程式碼**：只禁止「把 `ffmpeg.exe` 執行檔本身打包進安裝包/zip 發布」，不禁止分享「呼叫它的程式碼」。本專案本來就沒有夾帶 `ffmpeg.exe`（要求每台機器自行 `winget install`），所以這條不構成 repo 要保持 private 的理由。
+3. **真正該保密的是內容/品牌素材，不是授權問題**：`brands/<客戶代號>/` 放的是實際課程內容片段或客戶品牌素材（LOGO、片頭尾影片），這些不是開源套件、沒有授權允許公開分享——開放存取前務必確認 `brands/` 底下沒有夾帶真實素材（`brands/default/` 平時應保持空白模板，細節見 `brands/default/README.md`）。
+4. **API 金鑰一律走環境變數**（`GOOGLE_TRANSLATE_API_KEY`／`PEXELS_API_KEY`），不寫進程式碼或版控；分享前可用 `git grep -i "api_key\|secret\|password"` 掃一次確認沒有漏網的硬編碼金鑰。
+5. **依賴版本已鎖定**（見 `requirements.txt`），保留可重現性；要升版本時記得重新走一次完整流程實測，並更新 `THIRD_PARTY_NOTICES.md` 對應的查證日期。
+6. **公開完記得改回 private**：`gh repo edit intpure/intpure-course-video-postprod --visibility private`（或 GitHub 網頁 Settings → Danger Zone）。
 
 ## 使用方式（推薦：儀表板網頁）
 
@@ -52,7 +63,7 @@
 
 ## 多案共用
 
-品牌素材（片頭/片尾/LOGO/色票）放在 `brands/<客戶代號>/`，`06_bumper_concat.py --brand <代號>` 指定套用哪一份。新增客戶只要複製 `brands/_template/` 建新資料夾放素材，不需修改工具程式碼。
+品牌素材（片頭/片尾/LOGO/色票）放在 `brands/<客戶代號>/`，`06_bumper_concat.py --brand <代號>` 指定套用哪一份。`brands/default/` 預設是空白模板（放你的 `intro.mp4`/`outro.mp4` 即可生效），新增客戶只要複製整個資料夾改名，不需修改工具程式碼，細節見 `brands/default/README.md`。
 
 ## 致謝 / References
 
