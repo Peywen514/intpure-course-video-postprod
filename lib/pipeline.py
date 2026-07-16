@@ -17,6 +17,7 @@ from config import (
     FILLER_CUT_PADDING_MS,
     FILLER_FLAG_ONLY,
     INPUT_DIR,
+    NEVER_SPLIT_TERMS,
     OUTPUT_DIR,
     PLAY_RES_X,
     PLAY_RES_Y,
@@ -127,7 +128,13 @@ def _base_events(episode):
 
     詞庫（已知常見錯字）修正的套用時機是「斷句之前」，對逐字資料操作
     （glossary.apply_glossary_to_words），不是舊版「斷句後對每行文字」——
-    這樣詞庫裡跨越斷句邊界的多字詞修正也能生效，見 lib/glossary.py 開頭的說明。"""
+    這樣詞庫裡跨越斷句邊界的多字詞修正也能生效，見 lib/glossary.py 開頭的說明。
+
+    修正完之後、斷句之前，再用 glossary.merge_protected_terms 把 NEVER_SPLIT_TERMS
+    跟 glossary 學到的複合詞（learned_multichar_terms）合併成單一 token——順序是先
+    修正錯字（修正結果本身已經是單一 token）、再合併其餘已知複合詞。這樣 group_words()
+    看到的就已經是不可分割的單位，不需要靠斷點檢查當下的有限 lookahead 臨場判斷
+    要不要保護，見 lib/ass_builder.py 開頭的說明。"""
     work_dir = WORK_DIR / episode
     segments_path = work_dir / "segments_override.json"
     if segments_path.exists():
@@ -139,6 +146,8 @@ def _base_events(episode):
         raise FileNotFoundError(f"找不到 {transcript_path}，先跑轉錄")
     transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
     fixed_words = glossary.apply_glossary_to_words(transcript["words"])
+    protected_terms = list(NEVER_SPLIT_TERMS) + glossary.learned_multichar_terms()
+    fixed_words = glossary.merge_protected_terms(fixed_words, protected_terms)
     return group_words(fixed_words)
 
 

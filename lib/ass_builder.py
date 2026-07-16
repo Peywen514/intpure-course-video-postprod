@@ -9,25 +9,29 @@
 裡使用者校對學到、長度 > 1 的正確詞，見 _unsplittable_terms）、讓下一行以虛詞開頭、
 或把連接詞留在行尾，就往前回溯找上一個「合格」的斷點；回溯不到（例如整段話中間
 完全沒有空隙可退）就 fallback 維持原本的硬斷，不讓斷句因為找不到完美斷點而失敗或丟例外。
+
+這個斷點檢查只看得到「即將加入的下一個 token」，如果一個保護詞被 Whisper 拆成很細碎
+的單字 token，檢查當下可能還沒讀到詞的後半段而漏保護——這裡的回溯機制只是保底，真正
+可靠的保護是 lib/pipeline.py `_base_events` 在呼叫 group_words() 之前，用
+`lib.glossary.merge_protected_terms` 把已知複合詞先合併成單一 token，讓它們在
+group_words() 眼裡從一開始就不可分割，不需要靠斷點檢查臨場判斷。
 """
 
 from config import CONNECTIVE_WORDS, HEAD_DANGLER_CHARS, NEVER_SPLIT_TERMS
-from lib.glossary import load_glossary
+from lib.glossary import learned_multichar_terms
 
 
 def _unsplittable_terms():
     """「不能從中間腰斬」的詞：config.NEVER_SPLIT_TERMS（複合詞/專有名詞）+ CONNECTIVE_WORDS
     （連接詞本身也不該被斷句從中間切開，例如「所以」不能斷成「所」|「以」，否則回溯找斷點
-    時，為了不把連接詞留在行尾，反而把連接詞自己切成兩半，比原本的硬斷還糟）。
+    時，為了不把連接詞留在行尾，反而把連接詞自己切成兩半，比原本的硬斷還糟）+
+    corrections_glossary.json 裡使用者校對過、長度 > 1 的正確詞（見 lib/glossary.py
+    的 learned_multichar_terms，跟 merge_protected_terms 共用同一份清單來源）。
 
-    再加上 corrections_glossary.json 裡使用者校對過、長度 > 1 的正確詞——多字修正結果
-    代表系統已經「認得」這是一個完整詞，理當跟 NEVER_SPLIT_TERMS 一樣受保護，不用使用者
-    在 config.py 重複手動登記一次；單一字元的修正（例如「藍」→「欄」）不需要保護，一個字
-    不會有「從中間腰斬」的問題。刻意不快取、每次呼叫都重新讀檔：glossary 檔案很小，
-    group_words() 一個集數只呼叫一次，沒必要為了效能犧牲「校對完下一次產字幕就生效」。
+    刻意不快取、每次呼叫都重新讀檔：glossary 檔案很小，group_words() 一個集數只呼叫
+    一次，沒必要為了效能犧牲「校對完下一次產字幕就生效」。
     """
-    learned = [v["correct"] for v in load_glossary().values() if len(v["correct"]) > 1]
-    return list(NEVER_SPLIT_TERMS) + list(CONNECTIVE_WORDS) + learned
+    return list(NEVER_SPLIT_TERMS) + list(CONNECTIVE_WORDS) + learned_multichar_terms()
 
 
 def _splits_unsplittable_term(left_text, right_text, unsplittable_terms):

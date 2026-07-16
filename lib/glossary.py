@@ -71,6 +71,48 @@ def apply_glossary(text):
     return text
 
 
+def _merge_term(ws, pattern, replacement):
+    """在 ws（word dict 清單）裡找出所有完整出現 pattern 的片段，合併成一個 word
+    （文字換成 replacement、時間範圍取被合併片段的頭尾）。pattern != replacement 時
+    是錯字修正（見 apply_glossary_to_words）；pattern == replacement 時是「純合併、
+    文字不變」，用於保護已知複合詞不被斷句腰斬（見 merge_protected_terms）——
+    兩種用途共用同一套合併機制，差別只在傳入的 replacement 是不是同一個字串。
+    """
+    if not pattern:
+        return ws
+    search_from = 0
+    guard = 0
+    while guard < 200:  # 防呆：避免 replacement 本身又含 pattern 造成無限迴圈
+        guard += 1
+        joined = "".join(w["word"] for w in ws)
+        hit = joined.find(pattern, search_from)
+        if hit == -1:
+            break
+
+        # 找出被 [hit, hit+len(pattern)) 這段字元範圍覆蓋到的 word 索引範圍 [w1, w2]
+        cursor = 0
+        w1 = w2 = None
+        for wi, w in enumerate(ws):
+            wlen = len(w["word"])
+            if w1 is None and cursor + wlen > hit:
+                w1 = wi
+            if cursor + wlen >= hit + len(pattern):
+                w2 = wi
+                break
+            cursor += wlen
+        if w1 is None or w2 is None:
+            break  # 理論上不會發生（joined 是 ws 拼出來的），保守起見還是擋一下
+
+        merged = {
+            "word": replacement,
+            "start": ws[w1]["start"],
+            "end": ws[w2]["end"],
+        }
+        ws = ws[:w1] + [merged] + ws[w2 + 1 :]
+        search_from = hit + len(replacement)
+    return ws
+
+
 def apply_glossary_to_words(words):
     """詞庫修正的字級（word-level）版本：在 group_words() 斷句「之前」，對整段逐字稿
     的完整拼接文字做已知錯字替換，取代舊版「斷句後對每行文字」的做法。
@@ -98,38 +140,37 @@ def apply_glossary_to_words(words):
     ws = [dict(w) for w in words]
     for wrong in sorted(glossary, key=len, reverse=True):
         correct = glossary[wrong]["correct"]
-        if not wrong:
-            continue
-        search_from = 0
-        guard = 0
-        while guard < 200:  # 防呆：避免修正結果本身又含 wrong 造成無限迴圈
-            guard += 1
-            joined = "".join(w["word"] for w in ws)
-            hit = joined.find(wrong, search_from)
-            if hit == -1:
-                break
+        ws = _merge_term(ws, wrong, correct)
+    return ws
 
-            # 找出被 [hit, hit+len(wrong)) 這段字元範圍覆蓋到的 word 索引範圍 [w1, w2]
-            cursor = 0
-            w1 = w2 = None
-            for wi, w in enumerate(ws):
-                wlen = len(w["word"])
-                if w1 is None and cursor + wlen > hit:
-                    w1 = wi
-                if cursor + wlen >= hit + len(wrong):
-                    w2 = wi
-                    break
-                cursor += wlen
-            if w1 is None or w2 is None:
-                break  # 理論上不會發生（joined 是 ws 拼出來的），保守起見還是擋一下
 
-            merged = {
-                "word": correct,
-                "start": ws[w1]["start"],
-                "end": ws[w2]["end"],
-            }
-            ws = ws[:w1] + [merged] + ws[w2 + 1 :]
-            search_from = hit + len(correct)
+def learned_multichar_terms():
+    """corrections_glossary.json 裡長度 >1 的正確詞。供斷句保護用（NEVER_SPLIT_TERMS
+    的動態延伸，見 lib/ass_builder.py 的 _unsplittable_terms 與下面的
+    merge_protected_terms），避免使用者手動在 config.py 重複登記已經校對過的複合詞。
+    單字元修正（例如「藍」→「欄」）不需要保護，一個字不會有「從中間腰斬」的問題。
+    """
+    return [v["correct"] for v in load_glossary().values() if len(v["correct"]) > 1]
+
+
+def merge_protected_terms(words, terms):
+    """把 words 裡完整出現的 terms（例如 config.NEVER_SPLIT_TERMS + learned_multichar_terms()）
+    合併成單一 token——文字不變，純粹讓這些已知複合詞在 group_words() 眼裡變成不可分割
+    的單位。
+
+    為什麼需要這一步：group_words() 逐字掃描時，判斷「這個斷點合不合格」只看得到即將
+    加入的下一個 token；如果一個複合詞被 Whisper 拆成很細碎的單字 token，斷點檢查在
+    腰斬詞的當下可能還沒讀到詞的後半段，就誤判成合格斷點（見 lib/ass_builder.py 開頭
+    的已知限制說明）。跟 apply_glossary_to_words 一樣先把整段話合併好，group_words()
+    看到的就已經是不可分割的單一 token，不用靠斷點檢查臨場判斷夠不夠準。
+
+    呼叫順序建議在 apply_glossary_to_words 之後（見 lib/pipeline.py _base_events）：
+    先修正錯字（產生的複合詞已經是單一 token），再合併其餘已知複合詞，語意上先修正
+    再保護，也避免兩步處理到同一段文字時互相干擾。
+    """
+    ws = [dict(w) for w in words]
+    for term in sorted({t for t in terms if len(t) > 1}, key=len, reverse=True):
+        ws = _merge_term(ws, term, term)
     return ws
 
 
