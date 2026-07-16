@@ -70,12 +70,12 @@
   .controls {
     margin-top: 16px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 14px;
   }
-  .field { background:#26241f; border-radius:8px; padding:10px 14px; }
-  .field label { display:block; font-size:0.75rem; color:#aaa; margin-bottom:6px; cursor:help; }
-  .field .row { display:flex; align-items:center; gap:10px; }
+  .field { background:#26241f; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:10px; }
+  .field label { flex:0 0 auto; width:4.2em; font-size:0.75rem; color:#aaa; cursor:help; }
+  .field .row { flex:1; display:flex; align-items:center; gap:10px; min-width:0; }
   .field input[type=range] { flex:1; }
   .field .val { width:42px; text-align:right; font-variant-numeric: tabular-nums; }
   .actions { margin-top: 18px; display:flex; gap:10px; align-items:center; }
