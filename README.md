@@ -7,7 +7,7 @@
 - Python 3.9+
 - **ffmpeg / ffprobe**：需自行安裝並加入 PATH（`winget install Gyan.FFmpeg`，或至 [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) 下載）。
   **本工具不包含、不散布 ffmpeg 執行檔**——ffmpeg（Gyan.FFmpeg full build）為 GPLv3 授權，本工具僅以子行程（subprocess）呼叫外部 `ffmpeg.exe`，不連結、不打包其原始碼或二進位檔。若未來需要將本工具打包發布給其他人安裝，請勿把 `ffmpeg.exe` 一併塞進安裝包/zip，應讓對方自行透過上述方式安裝。詳見 `THIRD_PARTY_NOTICES.md`。
-- 思源黑體（Noto Sans TC）：Windows 系統若已安裝可直接使用（`C:\Windows\Fonts\NotoSansTC-VF.ttf`）。字型名稱設定在 `config.py`，之後可替換成其他可商用授權的開源字體。
+- 思源黑體（Noto Sans TC）字幕字型**已隨 repo 打包**在 `fonts/NotoSansTC-Bold.otf`（靜態粗體版本，SIL OFL 授權，見 `fonts/README.md`），不需要另外安裝、跨平台行為一致。字型設定在 `config.py` 的 `FONTS_DIR`/`Fontname`，之後可替換成其他可商用授權的開源字體。
 - `pip install -r requirements.txt`（faster-whisper）
 - （可選）字幕翻譯功能需要環境變數 `GOOGLE_TRANSLATE_API_KEY`（GCP 專案開通 Cloud Translation API 後建立的金鑰）。沒設定這個變數也不影響其他階段，只有按下「翻譯」按鈕時才會用到，未設定時會顯示缺金鑰的錯誤訊息。目標語言清單在 `config.py` 的 `TRANSLATE_TARGET_LANGS`。
 - （可選）B-Roll 素材搜尋功能需要環境變數 `PEXELS_API_KEY`（[pexels.com/api](https://www.pexels.com/api/) 免費申請）。用途：拿字幕文字當關鍵字去 Pexels 搜尋免費商用影片素材下載，不是生成式 AI。授權查證見 `THIRD_PARTY_NOTICES.md`——內容免標註但 API 使用條款要求顯著連結回 Pexels，發布最終影片時記得在說明欄/致謝名單附上。

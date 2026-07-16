@@ -7,11 +7,20 @@ INPUT_DIR = BASE_DIR / "input"
 WORK_DIR = BASE_DIR / "work"
 OUTPUT_DIR = BASE_DIR / "output"
 BRANDS_DIR = BASE_DIR / "brands"
+FONTS_DIR = BASE_DIR / "fonts"
 
 DEFAULT_BRAND = "default"
 
 # ASS 字幕樣式預設值（1920x1080 課程影片）。
 # Fontname 集中在這裡，之後要換成其他可商用授權開源字體只改這一個值。
+#
+# 2026-07-16 改用隨repo打包的靜態字重版本（fonts/NotoSansTC-Bold.otf，見
+# THIRD_PARTY_NOTICES.md），不再依賴系統安裝的可變字型：libass 在 Windows 上用
+# DirectWrite 比對可變字型（一個檔案含所有粗細）的粗細時會選錯（實測會選到最細的
+# Thin，不是 Bold: -1 要求的粗體），改用單一粗細的靜態字型檔可以避開這個問題，
+# 且不用再依賴使用者電腦上剛好有沒有裝這個字型（也讓 Mac/Linux 一致）。
+# lib/pipeline.py 的 stage_captions 呼叫 ffmpeg 時會用 fontsdir=FONTS_DIR 指定
+# 去哪裡找這個字型檔。
 # MarginV / MarginL / MarginR / Spacing / Fontsize 是 picker 工具可個別調整的欄位；
 # 沒有 work/<episode>/style_override.json 時就用這組預設值。
 CAPTION_STYLE = {

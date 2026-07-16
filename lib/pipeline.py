@@ -16,6 +16,7 @@ from config import (
     FILLER_AUTO_CUT,
     FILLER_CUT_PADDING_MS,
     FILLER_FLAG_ONLY,
+    FONTS_DIR,
     INPUT_DIR,
     NEVER_SPLIT_TERMS,
     OUTPUT_DIR,
@@ -227,10 +228,15 @@ def stage_captions(episode, video_filename=None):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_path = OUTPUT_DIR / f"{episode}_captioned.mp4"
 
+    # fontsdir 指到隨 repo 打包的靜態字重字型（見 config.FONTS_DIR 的說明）：libass
+    # 在 Windows 上用 DirectWrite 比對系統安裝的可變字型時會選錯粗細（實測選到最細的
+    # Thin，不是 Bold: -1 要的粗體），改指定這個資料夾裡的單一粗細字型檔可以避開這個
+    # 問題，也不必依賴使用者電腦上剛好有沒有裝這個字型。
+    fontsdir = ffmpeg_utils.escape_filter_path(FONTS_DIR.resolve())
     ffmpeg_utils.run(
         [
             "ffmpeg", "-y", "-i", str(video_path.resolve()),
-            "-vf", f"ass={ass_path.name}",
+            "-vf", f"ass=filename={ass_path.name}:fontsdir={fontsdir}",
             "-c:a", "copy",
             str(out_path.resolve()),
         ],
