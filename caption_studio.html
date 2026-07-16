@@ -7,6 +7,22 @@
   body { margin:0; background:#1c1b19; color:#eee; font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; }
   .wrap { max-width: 980px; margin: 0 auto; padding: 20px; }
   h1 { font-size: 1.1rem; font-weight: 600; color:#ccc; margin-bottom:4px; }
+  .hint-inline-btn {
+    font-size: 0.72rem; font-weight: 400; color:#8fa8d9; background:none; border:1px solid #3a382f;
+    border-radius:12px; padding:3px 10px; margin-left:10px; cursor:pointer; vertical-align:middle;
+  }
+  .hint-inline-btn:hover { background:#242320; }
+  .hint-steps {
+    margin: 0; padding-left: 1.5em; display: flex; flex-direction: column; gap: 12px;
+    color: #ccc; font-size: 0.88rem; line-height: 1.6;
+  }
+  .hint-steps li::marker { color: #4a90f7; font-weight: 600; }
+  .hint-steps b { color: #eee; }
+  .hint-chip {
+    display: inline-block; background: #2a3a52; color: #8fc4ff; border-radius: 6px;
+    padding: 1px 8px; font-size: 0.85em; white-space: nowrap;
+  }
+  .hint-modal-dontshow { display:flex; align-items:center; gap:8px; margin-top:18px; font-size:0.82rem; color:#aaa; }
   .back-link {
     display:inline-block; color:#8fa8d9; font-size:0.8rem; text-decoration:none;
     margin-bottom:8px;
@@ -181,8 +197,9 @@
 <body>
 <div class="wrap">
   <a class="back-link" href="/dashboard.html">← 回儀表板</a>
-  <h1>字幕編輯（<span id="episode-label"></span>）</h1>
-  <div class="hint">拖動字幕框調整位置/寬度（藍色框，左右把手拉寬度）；下方逐句校對文字，點時間戳跳到影片對照。文字太長按「✂」分句（游標點在要斷開處再按），斷錯按「⌃」跟上一句合併，聽到贅詞/口誤框選文字後按「✂ 剪除選取片段」。所有動作停手 3 秒會自動暫存（含字幕位置）。改完按右下角「🎬 套用字幕」，會先暫存，再重新燒錄字幕到影片。</div>
+  <h1>字幕編輯（<span id="episode-label"></span>）
+    <button type="button" id="usageHintBtn" class="hint-inline-btn" title="重新看一次使用說明">? 使用說明</button>
+  </h1>
   <div class="stage" id="stage">
     <video id="video" controls></video>
     <div class="caption-box" id="captionBox">
@@ -246,6 +263,26 @@
   <button id="shortcutSettingsBtn" title="快捷鍵設定">⌨️</button>
 </div>
 <button id="pauseBtn" class="floaty" title="暫停/播放（快捷鍵可自訂，預設 Space）">⏯</button>
+
+<div class="modal-overlay" id="usageHintModal" style="display:none;">
+  <div class="modal-box">
+    <button class="modal-close" id="usageHintModalClose" title="關閉">✕</button>
+    <h2>使用說明</h2>
+    <ol class="hint-steps">
+      <li><b>調整位置/寬度</b>——拖動畫面上的藍色字幕框，左右把手可以拉寬度</li>
+      <li><b>校對文字</b>——下方逐句對照，點時間戳可以跳到影片同一個時間點</li>
+      <li><b>分句</b>——文字太長時，游標點在要斷開的地方，按 <span class="hint-chip">✂ 分句</span></li>
+      <li><b>合併</b>——斷錯的話，按 <span class="hint-chip">⌃ 合併</span> 跟上一句接回去</li>
+      <li><b>剪掉贅詞/口誤</b>——框選那段文字，再按 <span class="hint-chip">✂ 剪除選取片段</span></li>
+      <li><b>自動暫存</b>——所有動作停手 3 秒會自動存檔（含字幕位置），不用自己按</li>
+      <li><b>套用</b>——改完按右下角 <span class="hint-chip">🎬 套用字幕</span>，會先暫存，再重新燒錄字幕到影片</li>
+    </ol>
+    <label class="hint-modal-dontshow">
+      <input type="checkbox" id="usageHintDontShow"> 不再提醒
+    </label>
+    <button type="button" id="usageHintGotIt" class="confirm-btn" style="margin-top:14px;">知道了</button>
+  </div>
+</div>
 
 <div class="modal-overlay" id="fillerModal" style="display:none;">
   <div class="modal-box">
@@ -456,7 +493,13 @@ function updateActiveRow() {
         row.classList.add("active");
         row.classList.remove("passed");
         const recentlyTyped = Date.now() - lastInputAt < 3000;
-        if (!recentlyTyped) {
+        // 原本只擋「最近 3 秒內打過字」，但使用者框選文字（例如要剪掉某個字）不算
+        // 「打字」、lastInputAt 不會更新——影片背景播放跨到下一句時間點，就會把
+        // 正在框選的文字框搶走焦點、游標重置到最後一個字，框選的範圍整個消失
+        // （2026-07-16 同事實測回報：要剪 0:48.3 的「我」，選取直接跳掉）。
+        // 改成只要目前焦點還在任何一個文字框裡，就不搶焦點，不限「最近打過字」。
+        const userInTextarea = document.activeElement && document.activeElement.tagName === "TEXTAREA";
+        if (!recentlyTyped && !userInTextarea) {
           row.scrollIntoView({ behavior: "smooth", block: "center" });
           const ta = row.querySelector("textarea");
           if (ta) {
@@ -1205,6 +1248,52 @@ document.getElementById("shortcutResetBtn").addEventListener("click", () => {
   saveKeymap(keymap);
   renderShortcutModal();
 });
+
+// ---------- 使用說明浮窗：跟系統常見的「小提示」一樣，每天第一次進這頁自動跳一次，
+// 勾了「不再提醒」就永久不再自動跳，右上角「? 使用說明」隨時可以手動再打開。
+// 存在 localStorage，是這台瀏覽器的設定，不會影響其他人。----------
+const HINT_STORAGE_KEY = "caption_studio_usage_hint_v1";
+const usageHintModal = document.getElementById("usageHintModal");
+
+function loadHintState() {
+  try {
+    return JSON.parse(localStorage.getItem(HINT_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+function saveHintState(state) {
+  localStorage.setItem(HINT_STORAGE_KEY, JSON.stringify(state));
+}
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function openUsageHint() {
+  usageHintModal.style.display = "flex";
+}
+function closeUsageHint() {
+  usageHintModal.style.display = "none";
+  if (document.getElementById("usageHintDontShow").checked) {
+    saveHintState({ ...loadHintState(), dismissed: true });
+  }
+}
+
+document.getElementById("usageHintBtn").addEventListener("click", openUsageHint);
+document.getElementById("usageHintGotIt").addEventListener("click", closeUsageHint);
+document.getElementById("usageHintModalClose").addEventListener("click", closeUsageHint);
+usageHintModal.addEventListener("click", (e) => {
+  if (e.target === usageHintModal) closeUsageHint();
+});
+
+(function autoShowUsageHintOncePerDay() {
+  const state = loadHintState();
+  if (state.dismissed) return;
+  const today = todayStr();
+  if (state.lastShownDate === today) return;
+  saveHintState({ ...state, lastShownDate: today });
+  openUsageHint();
+})();
 
 load();
 </script>
