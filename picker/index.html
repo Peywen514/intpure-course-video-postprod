@@ -123,6 +123,13 @@
         <span class="val" id="spacingVal"></span>
       </div>
     </div>
+    <div class="field">
+      <label>黑框粗細（Outline）</label>
+      <div class="row">
+        <input type="range" id="outline" min="0" max="10" step="0.5">
+        <span class="val" id="outlineVal"></span>
+      </div>
+    </div>
   </div>
 
   <div class="hint">垂直拖動字幕框調整高度；拖動左右藍色把手調整寬度；上方滑桿也可直接輸入數值。畫面上的文字是這支影片實際轉錄出來的字幕，跟著時間軸走。</div>
@@ -146,13 +153,15 @@ const textEl = document.getElementById("captionText");
 const marginVInput = document.getElementById("marginV");
 const marginLRInput = document.getElementById("marginLR");
 const spacingInput = document.getElementById("spacing");
+const outlineInput = document.getElementById("outline");
 const marginVVal = document.getElementById("marginVVal");
 const marginLRVal = document.getElementById("marginLRVal");
 const spacingVal = document.getElementById("spacingVal");
+const outlineVal = document.getElementById("outlineVal");
 const statusMsg = document.getElementById("statusMsg");
 
 let words = [];
-let state = { MarginV: 60, MarginL: 120, MarginR: 120, Spacing: 2 };
+let state = { MarginV: 60, MarginL: 120, MarginR: 120, Spacing: 2, Outline: 4 };
 // PlayRes 假設 1920x1080，跟 config.py 一致
 const PLAY_RES_Y = 1080;
 const PLAY_RES_X = 1920;
@@ -163,9 +172,11 @@ function applyStateToUI() {
   marginVInput.value = state.MarginV;
   marginLRInput.value = state.MarginL;
   spacingInput.value = state.Spacing;
+  outlineInput.value = state.Outline;
   marginVVal.textContent = state.MarginV;
   marginLRVal.textContent = state.MarginL;
   spacingVal.textContent = state.Spacing;
+  outlineVal.textContent = state.Outline;
   renderBox();
 }
 
@@ -181,6 +192,10 @@ function renderBox() {
   textEl.style.letterSpacing = state.Spacing + "px";
   const fontPx = (70 / PLAY_RES_Y) * stageH; // 對應 config.py Fontsize=70
   textEl.style.fontSize = Math.max(10, fontPx) + "px";
+  // 黑框粗細跟字體大小用同一個縮放比例（都是以 1920x1080 為基準的 ASS 單位），
+  // 這樣預覽框裡的黑框粗細變化跟實際燒出來的字幕看起來成比例
+  const outlinePx = (state.Outline / PLAY_RES_Y) * stageH;
+  textEl.style.webkitTextStroke = Math.max(0, outlinePx) + "px #000";
   const widthLabel = document.getElementById("widthLabel");
   const realWidthPx = Math.round((finalWidthPx / stageW) * PLAY_RES_X);
   widthLabel.textContent = `寬度 ${realWidthPx}px（MarginL ${state.MarginL} / MarginR ${state.MarginR}）`;
@@ -271,6 +286,10 @@ marginLRInput.addEventListener("input", () => {
 });
 spacingInput.addEventListener("input", () => {
   state.Spacing = Number(spacingInput.value);
+  applyStateToUI();
+});
+outlineInput.addEventListener("input", () => {
+  state.Outline = Number(outlineInput.value);
   applyStateToUI();
 });
 

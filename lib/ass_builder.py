@@ -178,7 +178,7 @@ def merge_style(defaults, override=None):
     """把 style_override.json（若存在）疊在 config 預設值上。"""
     merged = dict(defaults)
     if override:
-        for key in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize"):
+        for key in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize", "Outline"):
             if key in override:
                 merged[key] = override[key]
     return merged

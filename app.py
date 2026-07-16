@@ -343,7 +343,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             # 若照樣寫 null 進檔案，merge_style 會把 Fontsize 疊成 None，燒字幕時 ffmpeg 會噴錯。
             out = {
                 k: body[k]
-                for k in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize")
+                for k in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize", "Outline")
                 if k in body
             }
             episode_dir = WORK_DIR / episode
@@ -416,6 +416,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 "MarginR": CAPTION_STYLE["MarginR"],
                 "Spacing": CAPTION_STYLE["Spacing"],
                 "Fontsize": CAPTION_STYLE["Fontsize"],
+                "Outline": CAPTION_STYLE["Outline"],
             },
             "override": None,
             "words": [],
