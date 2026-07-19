@@ -545,6 +545,18 @@ async function runStage(episode, stage, extraQuery = "") {
       return;
     }
 
+    if (job.status === "unknown") {
+      // B6（2026-07-15 Fable5 審查）：伺服器重啟後 JOBS 記憶體會清空，這個 job_id 查
+      // 不到狀態，不能落到下面當「完成」處理，否則會誤導使用者以為階段真的跑完了。
+      if (live) {
+        const msgEl = live.querySelector(".job-msg");
+        msgEl.className = "job-msg err";
+        msgEl.textContent = "找不到這個工作的狀態（伺服器可能重啟過），請重新整理頁面確認實際結果。";
+      }
+      renderSidebar();
+      return;
+    }
+
     if (live) {
       const msgEl = live.querySelector(".job-msg");
       if (job.result && job.result.skipped) {

@@ -14,6 +14,12 @@ import urllib.request
 
 _GOOGLE_API_URL = "https://translation.googleapis.com/language/translate/v2"
 
+# Google Cloud Translation v2 官方文件明載單請求最多 128 個字串（2026-07-15 Fable5 審查
+# B3：舊版一次把整集所有句子塞進一個請求，10 分鐘課程常見 150-300 行字幕，第一次打真實
+# API 就會炸 HTTP 400）。課程字幕一行 ≤24 字，100 句/批遠低於 quotas 頁另外提到的
+# 100K bytes/請求上限，不用另外做 bytes 控制。
+_BATCH_SIZE = 100
+
 
 class TranslateError(RuntimeError):
     pass
@@ -60,7 +66,11 @@ def translate_texts(texts, target_lang, source_lang, engine, api_key):
     if not non_empty:
         return list(texts)
 
-    translated = _ENGINES[engine]([texts[i] for i in non_empty], target_lang, source_lang, api_key)
+    call = _ENGINES[engine]
+    translated = []
+    for start in range(0, len(non_empty), _BATCH_SIZE):
+        batch = non_empty[start : start + _BATCH_SIZE]
+        translated.extend(call([texts[i] for i in batch], target_lang, source_lang, api_key))
 
     result = list(texts)
     for idx, t in zip(non_empty, translated):

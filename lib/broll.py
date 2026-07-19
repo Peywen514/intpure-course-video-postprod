@@ -15,6 +15,7 @@ work/<episode>/broll/，使用者自己決定要不要剪進去。
 """
 
 import json
+import shutil
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -81,14 +82,25 @@ def _call_pexels(prompt, api_key, dest_dir):
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / f"pexels_{video['id']}.mp4"
-    urllib.request.urlretrieve(best["link"], dest_path)
 
-    return {
+    result = {
         "path": str(dest_path),
         "source": "pexels",
         "pexels_video_id": video["id"],
         "pexels_url": video.get("url"),
     }
+    if dest_path.exists():
+        # 重跑不整批重新下載：這支素材已經下載過（同一個 Pexels 影片 id 檔名固定）。
+        return result
+
+    try:
+        # urlretrieve 無 timeout 會無限掛住；改用 urlopen 顯式帶 timeout。
+        with urllib.request.urlopen(best["link"], timeout=60) as resp, open(dest_path, "wb") as f:
+            shutil.copyfileobj(resp, f)
+    except urllib.error.URLError as e:
+        raise BRollError(f"Pexels 素材下載失敗：{e.reason}") from e
+
+    return result
 
 
 _ENGINES = {"pexels": _call_pexels}
@@ -113,6 +125,11 @@ def generate_assets(plan, engine, dest_dir, api_key):
         if not prompt:
             results.append({**item, "skipped": True, "reason": "沒有對應字幕文字可當搜尋關鍵字"})
             continue
-        asset = _ENGINES[engine](prompt, api_key, dest_dir)
-        results.append({**item, "engine": engine, **asset})
+        try:
+            asset = _ENGINES[engine](prompt, api_key, dest_dir)
+            results.append({**item, "engine": engine, **asset})
+        except BRollError as e:
+            # B4（2026-07-15 Fable5 審查）：單項失敗（例如查無結果）不能讓整批中止，
+            # 否則前面已下載的項目連同這份 broll_assets.json 都不會落檔。
+            results.append({**item, "skipped": True, "error": str(e)})
     return results

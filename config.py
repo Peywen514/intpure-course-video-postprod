@@ -11,6 +11,11 @@ FONTS_DIR = BASE_DIR / "fonts"
 
 DEFAULT_BRAND = "default"
 
+# 支援的原始影片副檔名：app.py 上傳/品牌匯入檢查、pipeline.find_input_video 找集數
+# 對應影片都共用這份清單（2026-07-15 Fable5 審查 B7：find_input_video 原本用 glob
+# 撈第一個檔案不濾副檔名，input/ 裡若混了同集數的 .txt 之類雜檔會被誤當成影片）。
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".m4v"}
+
 # ASS 字幕樣式預設值（1920x1080 課程影片）。
 # Fontname 集中在這裡，之後要換成其他可商用授權開源字體只改這一個值。
 #

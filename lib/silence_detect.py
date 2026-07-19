@@ -184,14 +184,17 @@ def detect_silence(video_path, min_duration_ms, noise_db, edge_ignore_sec):
     duration = ffmpeg_utils.duration_seconds(video_path)
     min_duration = min_duration_ms / 1000.0
     raw_ranges = _raw_silence_ranges(video_path, noise_db)
+    inner_start, inner_end = edge_ignore_sec, duration - edge_ignore_sec
 
     kept = []
     for start, end in raw_ranges:
-        if (end - start) < min_duration:
+        # B7（2026-07-15 Fable5 審查）：舊版整段跳過任何觸及邊界的靜音，橫跨邊界、
+        # 延伸進片中的長靜音（例如 1.9s 起、持續 60s）會整段被放過。改成只裁掉落在
+        # 開頭/結尾緩衝區內的部分，裁完仍在片中內部、且夠長的那一截照樣保留剪掉。
+        clipped_start, clipped_end = max(start, inner_start), min(end, inner_end)
+        if (clipped_end - clipped_start) < min_duration:
             continue
-        if start < edge_ignore_sec or (duration - end) < edge_ignore_sec:
-            continue  # 開頭/結尾邊界靜音，不算片中內部空檔
-        kept.append((start, end))
+        kept.append((clipped_start, clipped_end))
     return kept
 
 

@@ -50,7 +50,14 @@ def transcribe(video_path, out_json_path, model_size="medium", force=False, init
     """
     out_json_path = Path(out_json_path)
     if out_json_path.exists() and not force:
-        return json.loads(out_json_path.read_text(encoding="utf-8"))
+        cached = json.loads(out_json_path.read_text(encoding="utf-8"))
+        # B7（2026-07-15 Fable5 審查）：舊版快取只看檔案存在，model_size/initial_prompt
+        # 變了（詞庫累積成長後重跑）也照樣回舊結果。缺這兩個 key 的舊快取（本次修復前
+        # 產生的）視為跟目前參數相容，不強迫重轉，只有明確記錄過、且對不上時才重轉。
+        if cached.get("model_size", model_size) == model_size and cached.get(
+            "initial_prompt", initial_prompt
+        ) == initial_prompt:
+            return cached
 
     language = "zh"
     model = _get_model(model_size)
@@ -87,6 +94,8 @@ def transcribe(video_path, out_json_path, model_size="medium", force=False, init
         # 靜音後會比檔案實際長度短，不能直接拿來當這個欄位用）。
         "duration": ffmpeg_utils.duration_seconds(video_path),
         "language": language,
+        "model_size": model_size,
+        "initial_prompt": initial_prompt,
         "segments": seg_list,
         "words": words,
     }

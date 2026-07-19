@@ -28,6 +28,7 @@ from config import (
     SILENCE_NOISE_DB,
     TRANSLATE_ENGINE,
     TRANSLATE_SOURCE_LANG,
+    VIDEO_EXTENSIONS,
     WORK_DIR,
 )
 from lib import broll, ffmpeg_utils, glossary, quality_check, timeline, translate
@@ -46,7 +47,10 @@ def episode_name_from_filename(filename):
 
 
 def find_input_video(episode):
-    candidates = list(INPUT_DIR.glob(f"{episode}-*")) + list(INPUT_DIR.glob(f"{episode}.*"))
+    candidates = [
+        f for f in list(INPUT_DIR.glob(f"{episode}-*")) + list(INPUT_DIR.glob(f"{episode}.*"))
+        if f.suffix.lower() in VIDEO_EXTENSIONS
+    ]
     if not candidates:
         raise FileNotFoundError(f"找不到集數 {episode} 對應的 input 影片")
     return candidates[0]
@@ -147,6 +151,10 @@ def _base_events(episode):
         raise FileNotFoundError(f"找不到 {transcript_path}，先跑轉錄")
     transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
     fixed_words = glossary.apply_glossary_to_words(transcript["words"])
+    # B2（2026-07-15 Fable5 審查）：跳剪會把 FILLER_AUTO_CUT 這幾個贅詞的「語音」剪掉，
+    # 字幕文字若還留著同一個詞，就會出現「聽不到呃，畫面上卻寫著呃」的不一致——在合併
+    # 保護詞/斷句之前先把這些 token 剔除，跳剪跟字幕文字才是同一套認知。
+    fixed_words = [w for w in fixed_words if w["word"].strip() not in FILLER_AUTO_CUT]
     protected_terms = list(NEVER_SPLIT_TERMS) + glossary.learned_multichar_terms()
     fixed_words = glossary.merge_protected_terms(fixed_words, protected_terms)
     return group_words(fixed_words)

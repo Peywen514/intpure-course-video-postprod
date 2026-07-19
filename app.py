@@ -25,6 +25,16 @@ from urllib.parse import parse_qs, urlparse
 _RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 _STATIC_CHUNK = 1024 * 1024
 
+# episode 參數只允許字母/數字/底線/連字號：這個值會被直接拼進 WORK_DIR/INPUT_DIR/
+# OUTPUT_DIR 路徑（見下方各 handler），不擋的話 "../../xxx" 可路徑穿越讀寫任意檔案
+# （2026-07-15 Fable5 審查 B7）。伺服器綁 127.0.0.1，風險本身不高，但擋一下不費事。
+_SAFE_EPISODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _is_safe_episode(episode):
+    return bool(_SAFE_EPISODE_RE.match(episode or ""))
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -35,6 +45,7 @@ from config import (  # noqa: E402
     INPUT_DIR,
     OUTPUT_DIR,
     TRANSLATE_TARGET_LANGS,
+    VIDEO_EXTENSIONS,
     WORK_DIR,
 )
 from lib.pipeline import (  # noqa: E402
@@ -149,6 +160,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/filler":
             episode = qs.get("episode", [""])[0]
+            if not _is_safe_episode(episode):
+                return self._send_json({"error": "無效的集數名稱"}, status=400)
             review_path = WORK_DIR / episode / "filler_review.json"
             approved_path = WORK_DIR / episode / "approved_cuts.json"
             jumpcut_path = OUTPUT_DIR / f"{episode}_jumpcut.mp4"
@@ -166,6 +179,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/qa":  # ⑧ 品質檢查結果（qa_report.json，沒有就回空殼）
             episode = qs.get("episode", [""])[0]
+            if not _is_safe_episode(episode):
+                return self._send_json({"error": "無效的集數名稱"}, status=400)
             report_path = WORK_DIR / episode / "qa_report.json"
             if report_path.exists():
                 return self._send_json(json.loads(report_path.read_text(encoding="utf-8")))
@@ -173,10 +188,14 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/defaults":  # picker 工具用
             episode = qs.get("episode", [""])[0]
+            if not _is_safe_episode(episode):
+                return self._send_json({"error": "無效的集數名稱"}, status=400)
             return self._send_json(self._picker_state(episode))
 
         if parsed.path == "/api/events":  # 字幕校對頁面用
             episode = qs.get("episode", [""])[0]
+            if not _is_safe_episode(episode):
+                return self._send_json({"error": "無效的集數名稱"}, status=400)
             try:
                 events = get_caption_events(episode)
             except FileNotFoundError as e:
@@ -264,6 +283,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         qs = parse_qs(parsed.query)
         episode = qs.get("episode", [""])[0]
 
+        # 除了不需要 episode 的三個端點，其餘全部會把 episode 拼進 WORK_DIR/INPUT_DIR/
+        # OUTPUT_DIR 路徑——在這裡統一擋一次，不必每個 handler 各自檢查一遍。
+        _episode_exempt = ("/api/clear_all", "/api/upload", "/api/brands/import_path")
+        if parsed.path not in _episode_exempt and not _is_safe_episode(episode):
+            return self._send_json({"error": "無效的集數名稱"}, status=400)
+
         if parsed.path == "/api/run/transcribe":
             return self._start_job_response(stage_transcribe, episode)
 
@@ -284,10 +309,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return self._start_job_response(stage_qa, episode)
 
         if parsed.path == "/api/run/translate":  # ⑨ 字幕翻譯，lang 沒帶就用第一個設定值
-            lang = qs.get("lang", [TRANSLATE_TARGET_LANGS[0]])[0]
+            default_lang = TRANSLATE_TARGET_LANGS[0] if TRANSLATE_TARGET_LANGS else None
+            lang = qs.get("lang", [default_lang])[0]
+            if not lang:
+                return self._send_json({"error": "未設定翻譯目標語言（TRANSLATE_TARGET_LANGS 是空的）"}, status=400)
             return self._start_job_response(stage_translate, episode, lang)
 
-        # B-Roll 規劃階段（尚未接生成引擎、尚無儀表板 UI，先開 API 供之後的標記工具呼叫）
+        # B-Roll 規劃階段（已接 Pexels 引擎下載素材，尚無儀表板 UI，先開 API 供標記工具呼叫）
         if parsed.path == "/api/broll/save_markers":
             body = self._read_json_body()
             save_broll_markers(episode, body.get("markers", []))
@@ -358,7 +386,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _handle_upload(self, filename):
         # 只取檔名部分，防止路徑穿越（../ 之類）；只允許常見影片副檔名
         safe_name = Path(filename).name
-        if not safe_name or Path(safe_name).suffix.lower() not in {".mp4", ".mov", ".mkv", ".avi", ".m4v"}:
+        if not safe_name or Path(safe_name).suffix.lower() not in VIDEO_EXTENSIONS:
             return self._send_json({"error": "檔名或格式不支援"}, status=400)
 
         INPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -396,7 +424,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             }, status=400)
         if not src.is_file():
             return self._send_json({"error": f"找不到檔案：{cleaned_path}"}, status=400)
-        if src.suffix.lower() not in {".mp4", ".mov", ".mkv", ".avi", ".m4v"}:
+        if src.suffix.lower() not in VIDEO_EXTENSIONS:
             return self._send_json({"error": "檔案格式不支援"}, status=400)
 
         brand_dir = BRANDS_DIR / safe_brand
