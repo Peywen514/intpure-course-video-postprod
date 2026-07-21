@@ -24,6 +24,7 @@ audio.utils.load_audio），這在本專案本來就是既有前提（README 已
 import json
 from pathlib import Path
 
+import config
 from lib import ffmpeg_utils
 
 _model = None
@@ -76,7 +77,15 @@ def transcribe(video_path, out_json_path, model_size="medium", force=False, init
     for seg in stable_result.segments:
         # stable-ts 回傳的 start/end 是 numpy.float64（numpy 底層雖可當一般 float 用，
         # 這裡明確轉型成原生 float，跟原本 faster-whisper 回傳的型別完全一致）。
-        seg_list.append({"start": float(seg.start), "end": float(seg.end), "text": seg.text})
+        # no_speech_prob：whisper 每個解碼區塊原生就會算的「這段其實沒人在說話」機率，
+        # 只存原始值（不在這裡套閾值判斷），供 flagged_ranges() 在讀取時動態判斷要不要
+        # 標記疑似幻覺——閾值之後要調整不必重轉整份逐字稿。
+        seg_list.append({
+            "start": float(seg.start),
+            "end": float(seg.end),
+            "text": seg.text,
+            "no_speech_prob": float(seg.no_speech_prob) if seg.no_speech_prob is not None else None,
+        })
         if seg.words:
             for w in seg.words:
                 words.append(
@@ -105,3 +114,25 @@ def transcribe(video_path, out_json_path, model_size="medium", force=False, init
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return result
+
+
+def flagged_ranges(transcript, threshold=None):
+    """回傳 transcript["segments"] 裡 no_speech_prob 超過閾值的 (start, end) 時間範圍清單，
+    供呼叫端判斷「哪些時間區間疑似是幻覺（沒人在講話卻生出文字）」。
+
+    只標記、不刪除任何文字——2026-07-20 /redteam 定案：若直接濾掉疑似段落，使用者在
+    校對頁面反而失去這段時間的文字可以框選剪除，真正的雜音會永久卡在成片裡。
+
+    閾值不烤進 transcript.json（那裡只存原始 no_speech_prob），這裡讀取時才套用，
+    之後調整閾值不需要重跑轉錄。
+
+    注意粒度限制（2026-07-21 樣本校準發現）：no_speech_prob 是 whisper 原生解碼區塊
+    （約 2-10 秒）的值，同一區塊被 stable-ts 拆成的多句字幕會共享同一個值，不是逐字
+    幕行獨立算出——呼叫端用時間重疊判斷「哪些字幕行疑似幻覺」時，精準度僅到區塊層級。
+    """
+    threshold = config.HALLUCINATION_NSP_THRESHOLD if threshold is None else threshold
+    return [
+        (seg["start"], seg["end"])
+        for seg in transcript.get("segments", [])
+        if seg.get("no_speech_prob") is not None and seg["no_speech_prob"] > threshold
+    ]

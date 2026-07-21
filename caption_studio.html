@@ -88,8 +88,10 @@
   }
   .row.passed { opacity:0.42; }
   .row.edited { background:#2a2712; border-left:3px solid #ffd24a; }
+  .row.suspected { background:#2a1f12; border-left:3px solid #ff6b4a; }
   .row.active { background:#1c2c42; outline:2px solid #4a90f7; opacity:1; }
   .row.active.edited { background:#33301a; outline:2px solid #ffd24a; }
+  .row .time .warn { color:#ff6b4a; }
   .row .time {
     color:#4a90f7; font-size:0.78rem; cursor:pointer; background:none; border:none;
     text-align:left; padding:4px 0; font-family:inherit;
@@ -560,9 +562,12 @@ function render() {
   const list = document.getElementById("list");
   list.innerHTML = segments.map((seg, i) => {
     const edited = seg.originalText !== undefined && seg.text !== seg.originalText;
+    const warnTitle = seg.suspectedHallucination
+      ? ` title="疑似辨識雜訊：這段時間 Whisper 判斷「可能沒人在說話」，若播放起來只是雜音，可考慮框選剪除"`
+      : "";
     return `
-      <div class="row ${edited ? "edited" : ""}" data-id="${seg.id}">
-        <button class="time" data-seek="${seg.start}">${fmtTime(seg.start)}</button>
+      <div class="row ${edited ? "edited" : ""} ${seg.suspectedHallucination ? "suspected" : ""}" data-id="${seg.id}">
+        <button class="time" data-seek="${seg.start}"${warnTitle}>${seg.suspectedHallucination ? '<span class="warn">⚠</span> ' : ""}${fmtTime(seg.start)}</button>
         <textarea data-id="${seg.id}" rows="1">${seg.text}</textarea>
         <div class="row-ops">
           <button type="button" data-merge="${seg.id}" title="跟上一句合併" ${i === 0 ? "disabled" : ""}>⌃</button>
@@ -613,7 +618,10 @@ async function load() {
   segments = data.events.map(ev => {
     const text = corrections[ev.index] !== undefined ? corrections[ev.index] : ev.text;
     idCounter = Math.max(idCounter, ev.index + 1);
-    return { id: ev.index, start: ev.start, end: ev.end, text, originalText: ev.text };
+    return {
+      id: ev.index, start: ev.start, end: ev.end, text, originalText: ev.text,
+      suspectedHallucination: !!ev.suspected_hallucination,
+    };
   });
   manualCuts = data.manual_cuts || [];
   render();

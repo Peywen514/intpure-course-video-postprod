@@ -56,6 +56,14 @@ CAPTION_STYLE = {
 PLAY_RES_X = 1920
 PLAY_RES_Y = 1080
 
+# whisper 幻覺疑似段落：no_speech_prob 超過此值才標記（只標記給校對頁面參考，不自動
+# 刪除文字/不影響跳剪）。2026-07-21 用兩份真實樣本（含一份 Jill 指定「已知有雜音」的
+# 錄音）校準：正常語音樣本 no_speech_prob 從未超過 0.163，0.8 對這類素材是安全值
+# （不會誤標），但尚未取得真正幻覺樣本驗證「抓得到」這一側——之後累積真實案例可回頭
+# 調整，改這個值不用重轉快取（transcript.json 存的是原始 no_speech_prob，閾值判定
+# 在讀取時才套用，見 lib/whisper_transcribe.py 的 flagged_ranges）。
+HALLUCINATION_NSP_THRESHOLD = 0.8
+
 # Phase 2 贅詞跳剪：高信心自動剪 vs 只標記待人工確認
 FILLER_AUTO_CUT = ["呃", "嗯", "啊", "欸"]
 FILLER_FLAG_ONLY = ["那個", "這個", "就是", "然後"]

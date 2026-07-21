@@ -35,7 +35,7 @@ from lib import broll, ffmpeg_utils, glossary, quality_check, timeline, translat
 from lib.ass_builder import build_ass, group_words, merge_style
 from lib.filler_detect import detect
 from lib.silence_detect import detect as detect_silence_cuts
-from lib.whisper_transcribe import transcribe
+from lib.whisper_transcribe import flagged_ranges, transcribe
 
 
 def episode_name_from_filename(filename):
@@ -161,9 +161,28 @@ def _base_events(episode):
 
 
 def get_caption_events(episode):
-    """回傳斷句分行後的字幕事件清單（給校對頁面顯示用，跟 stage_captions 用的是同一份斷句邏輯）。"""
+    """回傳斷句分行後的字幕事件清單（給校對頁面顯示用，跟 stage_captions 用的是同一份斷句邏輯）。
+
+    每行附帶 suspected_hallucination：跟原始 whisper 轉錄裡任何 no_speech_prob 超過閾值
+    的時間區間有重疊，只是標記給使用者參考（校對頁面可視覺提示、方便框選剪除），
+    不影響字幕文字或跳剪本身。轉錄快取（transcript.json）缺 no_speech_prob 欄位的舊集數
+    （這次修復前轉的）一律不標記，不強迫重轉。"""
     events = _base_events(episode)
-    return [{"index": i, "start": s, "end": e, "text": t} for i, (s, e, t) in enumerate(events)]
+    transcript_path = WORK_DIR / episode / "transcript.json"
+    ranges = []
+    if transcript_path.exists():
+        transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
+        ranges = flagged_ranges(transcript)
+    return [
+        {
+            "index": i,
+            "start": s,
+            "end": e,
+            "text": t,
+            "suspected_hallucination": any(s < r_end and e > r_start for r_start, r_end in ranges),
+        }
+        for i, (s, e, t) in enumerate(events)
+    ]
 
 
 def save_caption_corrections(episode, corrections):
