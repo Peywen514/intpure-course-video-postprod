@@ -1090,6 +1090,12 @@ function keyEventToString(e) {
 }
 
 document.addEventListener("keydown", (e) => {
+  // 中文輸入法選字中按Enter是「確認這個字」，不是「觸發快捷鍵」——這個階段瀏覽器
+  // 會把keydown標isComposing=true（部分瀏覽器改標keyCode 229，兩個都要擋）。
+  // 沒擋住的話，這裡的preventDefault()會打斷IME正在進行的選字，使用者感覺就是
+  // 「Enter按了但字幕沒跳到下一段」——真正在意的那次Enter，其實是選字後真正
+  // 再按一次的那下，讓瀏覽器先把這次的Enter用掉即可。
+  if (e.isComposing || e.keyCode === 229) return;
   const combo = keyEventToString(e);
   if (!combo) return;
   const inTextarea = e.target.tagName === "TEXTAREA";
