@@ -56,6 +56,57 @@ def find_input_video(episode):
     return candidates[0]
 
 
+def archive_version(episode, suffix):
+    """
+    如果 output/<episode>_<suffix>.mp4 已經存在，就將其重新命名為
+    output/<episode>_<suffix>_vN.mp4，其中 N 為下一個可用的歷史版本號。
+    這可以避免新產出的影片直接覆蓋掉舊有的暫存檔。
+    保留最多 3 個最近的歷史版本以節省空間。
+    """
+    file_path = OUTPUT_DIR / f"{episode}_{suffix}.mp4"
+    if not file_path.exists():
+        return
+    
+    # 搜尋已存在的歷史版本，例如 1-1_final_v1.mp4, 1-1_final_v2.mp4
+    pattern = f"{episode}_{suffix}_v*.mp4"
+    existing_versions = []
+    for f in OUTPUT_DIR.glob(pattern):
+        name_parts = f.stem.split("_v")
+        if len(name_parts) > 1:
+            try:
+                ver = int(name_parts[-1])
+                existing_versions.append(ver)
+            except ValueError:
+                pass
+                
+    # 限制最大保留歷史版本數，只保留最新的 3 個
+    MAX_HISTORICAL_VERSIONS = 3
+    if len(existing_versions) >= MAX_HISTORICAL_VERSIONS:
+        existing_versions.sort()
+        # 計算需要刪除的數量
+        to_remove_count = len(existing_versions) - MAX_HISTORICAL_VERSIONS + 1
+        for i in range(to_remove_count):
+            old_ver = existing_versions[i]
+            old_file = OUTPUT_DIR / f"{episode}_{suffix}_v{old_ver}.mp4"
+            if old_file.exists():
+                try:
+                    old_file.unlink()
+                    print(f"[versioning] Deleted oldest version to save space: {old_file.name}")
+                except Exception as e:
+                    print(f"[versioning] Error deleting old version: {e}")
+            if old_ver in existing_versions:
+                existing_versions.remove(old_ver)
+
+    next_ver = max(existing_versions) + 1 if existing_versions else 1
+    dest_path = OUTPUT_DIR / f"{episode}_{suffix}_v{next_ver}.mp4"
+    
+    try:
+        shutil.move(str(file_path), str(dest_path))
+        print(f"[versioning] Archived existing {file_path.name} to {dest_path.name}")
+    except Exception as e:
+        print(f"[versioning] Error archiving file: {e}")
+
+
 def list_episodes():
     """掃 input/ 底下的影片，回傳每集的名稱與各階段完成狀態。"""
     episodes = {}
@@ -77,12 +128,31 @@ def list_episodes():
             or (work_dir / "segments_override.json").exists()
             or (work_dir / "style_override.json").exists()
         )
-        info["captioned"] = (OUTPUT_DIR / f"{ep}_captioned.mp4").exists()
+        info["captioned"] = (work_dir / "captions.ass").exists()
         info["filler_detected"] = (work_dir / "filler_review.json").exists()
         info["filler_confirmed"] = (work_dir / "approved_cuts.json").exists()
         info["jumpcut"] = (OUTPUT_DIR / f"{ep}_jumpcut.mp4").exists()
         info["final"] = (OUTPUT_DIR / f"{ep}_final.mp4").exists()
         info["qa_done"] = (work_dir / "qa_report.json").exists()
+
+        # 收集歷史版本清單
+        info["versions"] = {
+            "captioned": sorted(
+                int(f.stem.split("_v")[-1])
+                for f in OUTPUT_DIR.glob(f"{ep}_captioned_v*.mp4")
+                if f.stem.split("_v")[-1].isdigit()
+            ),
+            "jumpcut": sorted(
+                int(f.stem.split("_v")[-1])
+                for f in OUTPUT_DIR.glob(f"{ep}_jumpcut_v*.mp4")
+                if f.stem.split("_v")[-1].isdigit()
+            ),
+            "final": sorted(
+                int(f.stem.split("_v")[-1])
+                for f in OUTPUT_DIR.glob(f"{ep}_final_v*.mp4")
+                if f.stem.split("_v")[-1].isdigit()
+            ),
+        }
         # 翻譯完成的語言清單（檔名 <ep>_<lang>.srt），依實際存在的檔案反推，不是依
         # config.TRANSLATE_TARGET_LANGS 猜——這樣就算之後清單改了，舊集數已翻好的
         # 語言狀態也不會顯示錯。
@@ -252,28 +322,15 @@ def stage_captions(episode, video_filename=None):
     ass_content = build_ass(events, style, play_res=(PLAY_RES_X, PLAY_RES_Y))
     ass_path.write_text(ass_content, encoding="utf-8")
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = OUTPUT_DIR / f"{episode}_captioned.mp4"
-
-    # fontsdir 指到隨 repo 打包的靜態字重字型（見 config.FONTS_DIR 的說明）：libass
-    # 在 Windows 上用 DirectWrite 比對系統安裝的可變字型時會選錯粗細（實測選到最細的
-    # Thin，不是 Bold: -1 要的粗體），改指定這個資料夾裡的單一粗細字型檔可以避開這個
-    # 問題，也不必依賴使用者電腦上剛好有沒有裝這個字型。
-    fontsdir = ffmpeg_utils.escape_filter_path(FONTS_DIR.resolve())
-    ffmpeg_utils.run(
-        [
-            "ffmpeg", "-y", "-i", str(video_path.resolve()),
-            "-vf", f"ass=filename={ass_path.name}:fontsdir={fontsdir}",
-            "-c:a", "copy",
-            str(out_path.resolve()),
-        ],
-        cwd=str(ass_path.parent),
-    )
+    # 2026-07-16 為了避免重複轉碼，在此階段僅產生字幕檔（captions.ass），不跑 FFmpeg 渲染。
+    # 等到後續「套用跳剪」或「套用片頭尾」時，再合併執行單次轉碼（Single Encode），
+    # 這樣可以省去多次影片轉碼時間，且避免畫質受二次壓縮影響。
     return {
-        "output": str(out_path),
+        "output": str(video_path),
         "events": len(events),
         "style_override_used": override is not None,
         "corrections_used": segments_override_path.exists() or corrections_path.exists(),
+        "skipped_render": True
     }
 
 
@@ -391,12 +448,21 @@ def _complement_ranges(cut_ranges, duration):
     return keep
 
 
-def _build_filter_complex(keep_ranges):
+def _build_filter_complex(keep_ranges, burn_subtitles=False, ass_name=None, fontsdir=None):
     parts = []
+    
+    if burn_subtitles and ass_name:
+        ass_filter = f"ass=filename={ass_name}:fontsdir={fontsdir}" if fontsdir else f"ass=filename={ass_name}"
+        parts.append(f"[0:v]{ass_filter}[subv]")
+        num_ranges = len(keep_ranges)
+        split_labels = "".join(f"[sv{i}]" for i in range(num_ranges))
+        parts.append(f"[subv]split={num_ranges}{split_labels}")
+    
     labels = []
     for i, (s, e) in enumerate(keep_ranges):
         labels.append((f"[v{i}]", f"[a{i}]"))
-        parts.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}]")
+        v_src = f"[sv{i}]" if (burn_subtitles and ass_name) else "[0:v]"
+        parts.append(f"{v_src}trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}]")
         parts.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
     concat_inputs = "".join(v + a for v, a in labels)
     parts.append(f"{concat_inputs}concat=n={len(keep_ranges)}:v=1:a=1[outv][outa]")
@@ -404,11 +470,10 @@ def _build_filter_complex(keep_ranges):
 
 
 def stage_jumpcut(episode, video_filename=None):
-    """預設接在字幕匹配之後：如果 output/<episode>_captioned.mp4 已存在就以它為來源
-    （字幕是逐格燒錄畫進畫面的，剪掉整段區間不影響剩下片段的字幕正確性，時間軸跟原始轉錄
-    一致，所以直接在已匹配字幕的版本上跳剪是安全的），沒有的話才退回用原始檔——但退回時
-    會在回傳結果帶 warning，不再靜默處理（2026-07-15 Fable5 審查 B5：先前完全沒有提示，
-    使用者若先按⑥再按④會拿到一支無字幕的跳剪版，且後續⑦也會優先選中它，全程零警告）。
+    """預設接在字幕匹配之後：如果 output/<episode>_captioned.mp4 已存在就以它為來源。
+    如果沒有的話才退回用原始檔。
+    如果退回到原始檔，且 local 有 captions.ass，我們就順便在 trim 的時候把字幕燒進去，
+    實現單次轉碼（Single Encode）以節省時間與畫質。
     """
     work_dir = WORK_DIR / episode
     warning = None
@@ -423,10 +488,6 @@ def stage_jumpcut(episode, video_filename=None):
         else:
             video_path = find_input_video(episode)
             used_captioned = False
-            warning = (
-                "找不到已匹配字幕的版本（output/{ep}_captioned.mp4），這次跳剪是直接剪"
-                "原始檔，產出的影片不含字幕。建議先跑④匹配字幕再跑這步。"
-            ).format(ep=episode)
 
     cut_ranges = _load_cut_ranges(work_dir)
     if not cut_ranges:
@@ -435,8 +496,24 @@ def stage_jumpcut(episode, video_filename=None):
     duration = ffmpeg_utils.duration_seconds(video_path)
     cut_ranges = _apply_padding_and_merge(cut_ranges, FILLER_CUT_PADDING_MS, duration)
     keep_ranges = _complement_ranges(cut_ranges, duration)
-    filter_complex = _build_filter_complex(keep_ranges)
+    
+    # 判斷是否需要在此階段順便燒錄字幕
+    ass_path = work_dir / "captions.ass"
+    burn_subtitles = (not used_captioned) and ass_path.exists()
+    
+    fontsdir = None
+    if burn_subtitles:
+        if FONTS_DIR.exists():
+            fontsdir = ffmpeg_utils.escape_filter_path(FONTS_DIR.resolve())
 
+    filter_complex = _build_filter_complex(
+        keep_ranges,
+        burn_subtitles=burn_subtitles,
+        ass_name=ass_path.name if burn_subtitles else None,
+        fontsdir=fontsdir
+    )
+
+    archive_version(episode, "jumpcut")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_path = OUTPUT_DIR / f"{episode}_jumpcut.mp4"
 
@@ -451,18 +528,16 @@ def stage_jumpcut(episode, video_filename=None):
             "-ar", str(ENCODE_PRESET["audio_rate"]),
             "-ac", str(ENCODE_PRESET["audio_channels"]),
             str(out_path.resolve()),
-        ]
+        ],
+        cwd=str(work_dir.resolve())
     )
     new_duration = ffmpeg_utils.duration_seconds(out_path)
     total_cut = sum(e - s for s, e in cut_ranges)
 
-    # 時間軸重映射（B1）：keep_ranges 落檔給 stage_translate／stage_qa 用，讓它們對
-    # jumpcut/final 版本算出來的字幕時間，能對應到「剪過之後」的實際時間軸，而不是
-    # 一律沿用原始未剪的轉錄時間。
     work_dir.mkdir(parents=True, exist_ok=True)
     timeline.save_jumpcut_map(work_dir, keep_ranges)
     (work_dir / "jumpcut_source.json").write_text(
-        json.dumps({"used_captioned": used_captioned}, ensure_ascii=False), encoding="utf-8"
+        json.dumps({"used_captioned": used_captioned or burn_subtitles}, ensure_ascii=False), encoding="utf-8"
     )
 
     return {
@@ -476,7 +551,7 @@ def stage_jumpcut(episode, video_filename=None):
     }
 
 
-def stage_bumper(episode, brand=DEFAULT_BRAND, video_filename=None):
+def stage_bumper(episode, brand=DEFAULT_BRAND, video_filename=None, transition="none"):
     brand_dir = BRANDS_DIR / brand
     intro_path = brand_dir / "intro.mp4"
     outro_path = brand_dir / "outro.mp4"
@@ -485,22 +560,24 @@ def stage_bumper(episode, brand=DEFAULT_BRAND, video_filename=None):
 
     work_dir = WORK_DIR / episode
     warning = None
+    suffix = None
     if video_filename:
         video_path = INPUT_DIR / video_filename
+        suffix = "raw"
     else:
         # 明確優先順序（不依賴檔名字母序）：跳剪版 > 字幕版 > 原始檔
-        for suffix in ("jumpcut", "captioned"):
-            candidate = OUTPUT_DIR / f"{episode}_{suffix}.mp4"
+        for sfx in ("jumpcut", "captioned"):
+            candidate = OUTPUT_DIR / f"{episode}_{sfx}.mp4"
             if candidate.exists():
                 video_path = candidate
+                suffix = sfx
                 break
         else:
             video_path = find_input_video(episode)
             suffix = "raw"
 
         # B5：跳剪版可能是在字幕匹配之前、直接剪原始檔做出來的（stage_jumpcut 找不到
-        # captioned.mp4 時的退回路徑）——這種情況下片頭尾套的是無字幕版本，過去完全
-        # 沒有提示，靜默產出「沒有字幕的 final」。
+        # captioned.mp4 時的退回路徑）——這種情況下片頭尾套的是無字幕版本
         if suffix == "jumpcut":
             marker_path = work_dir / "jumpcut_source.json"
             if marker_path.exists():
@@ -510,18 +587,92 @@ def stage_bumper(episode, brand=DEFAULT_BRAND, video_filename=None):
                         "套用片頭尾用的跳剪版本，是在字幕匹配之前做的，不含字幕。"
                         "建議重跑④匹配字幕→⑥套用跳剪→⑦套用片頭尾。"
                     )
-        elif suffix == "raw":
-            warning = "找不到字幕版或跳剪版輸出，這次片頭尾是直接套在原始檔上，不含字幕、也沒剪除贅詞。"
 
+    # 判斷影片是否已有字幕
+    ass_path = work_dir / "captions.ass"
+    has_burned_subtitles = False
+    if suffix == "jumpcut":
+        marker_path = work_dir / "jumpcut_source.json"
+        if marker_path.exists():
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            has_burned_subtitles = marker.get("used_captioned", True)
+    elif suffix == "captioned":
+        has_burned_subtitles = True
+
+    burn_subtitles = (not has_burned_subtitles) and ass_path.exists()
+
+    fontsdir = None
+    if burn_subtitles:
+        if FONTS_DIR.exists():
+            fontsdir = ffmpeg_utils.escape_filter_path(FONTS_DIR.resolve())
+
+    archive_version(episode, "final")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_path = OUTPUT_DIR / f"{episode}_final.mp4"
 
-    filter_complex = (
-        "[0:v]setpts=PTS-STARTPTS[v0];[0:a]asetpts=PTS-STARTPTS[a0];"
-        "[1:v]setpts=PTS-STARTPTS[v1];[1:a]asetpts=PTS-STARTPTS[a1];"
-        "[2:v]setpts=PTS-STARTPTS[v2];[2:a]asetpts=PTS-STARTPTS[a2];"
-        "[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[outv][outa]"
-    )
+    # 獲取各區段時長
+    d0 = ffmpeg_utils.duration_seconds(intro_path)
+    d1 = ffmpeg_utils.duration_seconds(video_path)
+    d2 = ffmpeg_utils.duration_seconds(outro_path)
+
+    # 轉場設定：Fade/SlideUp/Dissolve 等轉場效果。
+    # 片頭轉場預設 1.0 秒，片尾轉場依使用者要求設定為 0.5 秒淡黑過渡（放在片尾一開始，不卡主影片最後一句話）。
+    T_intro = 1.0
+    T_outro = 0.5
+    use_transition = (transition != "none") and d0 > T_intro and d1 > (T_intro + T_outro) and d2 > T_outro
+
+    # [1:v] 套用字幕（若有需要）
+    if burn_subtitles:
+        v1_source = f"[1:v]ass=filename={ass_path.name}:fontsdir={fontsdir},fps=fps=25,settb=1/90000,setpts=PTS-STARTPTS[v1]"
+    else:
+        v1_source = "[1:v]fps=fps=25,settb=1/90000,setpts=PTS-STARTPTS[v1]"
+
+    if use_transition:
+        if transition in ("slideup_fade", "slideup_fadeblack"):
+            t1, t2 = "slideup", "fadeblack"
+        elif transition == "slideup_dissolve":
+            t1, t2 = "slideup", "dissolve"
+        elif transition == "slideup_slideup":
+            t1, t2 = "slideup", "slideup"
+        elif transition in ("fade", "fadeblack"):
+            t1, t2 = "fadeblack", "fadeblack"
+        elif "_" in transition:
+            t1, t2 = transition.split("_", 1)
+        else:
+            t1, t2 = transition, transition
+
+        if t1 == "fade":
+            t1 = "fadeblack"
+        if t2 == "fade":
+            t2 = "fadeblack"
+
+        # 片頭轉場：讓片頭完整播放 d0 秒，從 d0 秒開始轉場（利用 tpad/apad 凍結/補靜音 T_intro 秒作為過渡）。
+        # 片尾轉場：讓剪輯好的主影片完整播放 d1 秒（從 d0 開始到 d0+d1 結束），完全不被壓掉最後語音與畫面；
+        # 將 0.5 秒淡黑轉場放在片尾一開始（從 d0+d1 開始，利用 tpad 補黑/補靜音 0.5 秒過渡至片尾）。
+        offset1 = d0
+        offset2 = d0 + d1
+        filter_complex = (
+            f"[0:v]fps=fps=25,settb=1/90000,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={T_intro}[v0];"
+            f"{v1_source};"
+            f"[2:v]fps=fps=25,settb=1/90000,setpts=PTS-STARTPTS[v2];"
+            f"[0:a]aresample=48000,asetpts=PTS-STARTPTS,apad=pad_dur={T_intro}[a0];"
+            f"[1:a]aresample=48000,asetpts=PTS-STARTPTS[a1];"
+            f"[2:a]aresample=48000,asetpts=PTS-STARTPTS[a2];"
+            f"[v0][v1]xfade=transition={t1}:duration={T_intro}:offset={offset1:.3f}[v01];"
+            f"[a0][a1]acrossfade=d={T_intro}:c1=tri:c2=tri[a01];"
+            f"[v01]tpad=stop_mode=add:stop_duration={T_outro}:color=black[v01p];"
+            f"[a01]apad=pad_dur={T_outro}[a01p];"
+            f"[v01p][v2]xfade=transition={t2}:duration={T_outro}:offset={offset2:.3f}[outv];"
+            f"[a01p][a2]acrossfade=d={T_outro}:c1=tri:c2=tri[outa]"
+        )
+    else:
+        filter_complex = (
+            f"[0:v]fps=fps=25,settb=1/90000,setpts=PTS-STARTPTS[v0];[0:a]aresample=48000,asetpts=PTS-STARTPTS[a0];"
+            f"{v1_source};[1:a]aresample=48000,asetpts=PTS-STARTPTS[a1];"
+            f"[2:v]fps=fps=25,settb=1/90000,setpts=PTS-STARTPTS[v2];[2:a]aresample=48000,asetpts=PTS-STARTPTS[a2];"
+            f"[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[outv][outa]"
+        )
+
     ffmpeg_utils.run(
         [
             "ffmpeg", "-y",
@@ -536,14 +687,14 @@ def stage_bumper(episode, brand=DEFAULT_BRAND, video_filename=None):
             "-ar", str(ENCODE_PRESET["audio_rate"]),
             "-ac", str(ENCODE_PRESET["audio_channels"]),
             str(out_path.resolve()),
-        ]
+        ],
+        cwd=str(work_dir.resolve())
     )
 
-    # 時間軸重映射（B1）：final 版比來源檔多了一段片頭時長的位移，落檔給
-    # stage_translate／stage_qa 用來把時間軸換算到 final 上。
-    intro_duration = ffmpeg_utils.duration_seconds(intro_path)
+    # 時間軸重映射 (B1)：片頭完整播放 d0 秒後主內容才開始
+    intro_offset = d0
     work_dir.mkdir(parents=True, exist_ok=True)
-    timeline.save_bumper_offset(work_dir, intro_duration)
+    timeline.save_bumper_offset(work_dir, intro_offset)
 
     return {"output": str(out_path), "source": str(video_path), "warning": warning}
 

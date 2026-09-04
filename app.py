@@ -371,10 +371,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/run/bumper":
             brand = qs.get("brand", [DEFAULT_BRAND])[0]
+            transition = qs.get("transition", ["slideup_dissolve"])[0]
             return self._start_job_response(
                 stage_bumper, episode, brand,
                 meta={"episode": episode, "stage_label": "套用片頭尾"},
                 dedupe_key=f"{episode}:bumper",
+                transition=transition,
             )
 
         if parsed.path == "/api/run/qa":  # ⑧ 品質檢查：一樣走 start_job 進佇列排隊
@@ -466,7 +468,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             # 若照樣寫 null 進檔案，merge_style 會把 Fontsize 疊成 None，燒字幕時 ffmpeg 會噴錯。
             out = {
                 k: body[k]
-                for k in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize", "Outline")
+                for k in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize", "Outline", "Fontname")
                 if k in body
             }
             episode_dir = WORK_DIR / episode
@@ -540,6 +542,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 "Spacing": CAPTION_STYLE["Spacing"],
                 "Fontsize": CAPTION_STYLE["Fontsize"],
                 "Outline": CAPTION_STYLE["Outline"],
+                "Fontname": CAPTION_STYLE["Fontname"],
             },
             "override": None,
             "words": [],

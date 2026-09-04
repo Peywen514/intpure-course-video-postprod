@@ -19,10 +19,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("episode")
     parser.add_argument("--brand", default=DEFAULT_BRAND)
+    parser.add_argument("--transition", default="slideup_fade", help="轉場效果 (slideup_fade, slideup_dissolve, slideup_slideup, fadeblack, dissolve, slideup, none)")
     parser.add_argument("video", nargs="?", default=None)
     args = parser.parse_args()
 
-    result = stage_bumper(args.episode, brand=args.brand, video_filename=args.video)
+    result = stage_bumper(args.episode, brand=args.brand, video_filename=args.video, transition=args.transition)
 
     print(f"來源: {result['source']}")
     print(f"完成: {result['output']}")

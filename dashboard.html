@@ -136,6 +136,88 @@
   .brand-import-row input[id$="Path"] { flex:1; min-width:220px; }
   .brand-import-msg { font-size:0.8rem; color:var(--soft); margin-top:6px; min-height:1.2em; }
   .brand-import-msg.err { color:var(--err); }
+
+  /* 圖片放大燈箱 CSS */
+  .img-modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: rgba(0, 0, 0, 0.95);
+    align-items: center;
+    justify-content: center;
+  }
+  .img-modal-content-wrap {
+    position: relative;
+    max-width: 95%;
+    max-height: 95%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .img-modal-content {
+    max-width: 100%;
+    max-height: 80vh;
+    border-radius: 6px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+    cursor: grab;
+    transition: transform 0.15s ease;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  .img-modal-content:active {
+    cursor: grabbing;
+  }
+  .img-modal-close {
+    position: absolute;
+    top: -50px;
+    right: 0px;
+    color: #f1f1f1;
+    font-size: 38px;
+    font-weight: bold;
+    cursor: pointer;
+    background: none;
+    border: none;
+  }
+  .img-modal-close:hover {
+    color: #bbb;
+  }
+  .img-modal-controls {
+    display: flex;
+    gap: 15px;
+    margin-top: 15px;
+    background: rgba(30, 30, 30, 0.9);
+    padding: 8px 20px;
+    border-radius: 30px;
+    border: 1px solid rgba(255,255,255,0.15);
+    align-items: center;
+  }
+  .img-modal-btn {
+    background: #3a382f;
+    color: #eee;
+    border: 1px solid #5a584f;
+    padding: 6px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .img-modal-btn:hover {
+    background: #4e4b40;
+    border-color: #7a786f;
+  }
+  .img-modal-zoom-info {
+    color: #ccc;
+    font-size: 0.85rem;
+    font-weight: 600;
+    min-width: 60px;
+    text-align: center;
+  }
 </style>
 </head>
 <body>
@@ -178,6 +260,21 @@
   <div class="layout">
     <div class="sidebar" id="sidebar"></div>
     <div class="detail" id="detail"></div>
+  </div>
+</div>
+
+<!-- 圖片放大燈箱 HTML -->
+<div id="imgModal" class="img-modal" style="display: none;">
+  <div class="img-modal-content-wrap">
+    <button class="img-modal-close" onclick="closeImgModal()">&times;</button>
+    <img class="img-modal-content" id="imgModalImg" src="" alt="放大預覽圖">
+    <div class="img-modal-controls">
+      <button class="img-modal-btn" onclick="zoomImg(0.2)">🔍 放大</button>
+      <button class="img-modal-btn" onclick="zoomImg(-0.2)">🔍 縮小</button>
+      <span class="img-modal-zoom-info" id="imgModalZoomVal">100%</span>
+      <button class="img-modal-btn" onclick="resetZoomImg()">⟲ 重設</button>
+      <button class="img-modal-btn" onclick="closeImgModal()" style="background:#5a2b22; border-color:#80352a;">✕ 關閉</button>
+    </div>
   </div>
 </div>
 
@@ -419,7 +516,16 @@ function renderDetail(ep) {
       <button data-action="filler_detect" class="${ep.filler_detected ? "done" : ""}">③ 偵測贅詞</button>
       <button data-action="jumpcut" class="${ep.jumpcut ? "done" : ""}">④ 套用跳剪</button>
       ${BRANDS.length > 0
-        ? `<select data-brand-select title="選要套用哪一套片頭/片尾版本">${BRANDS.map(b => `<option value="${b.name}">${b.name}</option>`).join("")}</select>`
+        ? `<select data-brand-select title="選要套用哪一套片頭/片尾版本">${BRANDS.map(b => `<option value="${b.name}">${b.name}</option>`).join("")}</select>
+           <select data-transition-select title="選擇轉場效果">
+             <option value="slideup_fade" selected>片頭推 + 片尾淡出變黑 (過渡黑場，推薦)</option>
+             <option value="slideup_dissolve">片頭推 + 片尾平滑疊化 (無黑場)</option>
+             <option value="slideup_slideup">片頭推 + 片尾推 (無黑場)</option>
+             <option value="dissolve">全部平滑疊化 (無黑場)</option>
+             <option value="slideup">全部向上移開 (無黑場)</option>
+             <option value="fadeblack">全部淡出變黑 (過渡黑場)</option>
+             <option value="none">無轉場 (直接接續)</option>
+           </select>`
         : ""}
       <button data-action="bumper" class="${ep.final ? "done" : ""}" ${BRANDS.length === 0 ? "disabled title=\"尚無品牌，先在上方匯入片頭/片尾\"" : ""}>⑤ 套用片頭尾</button>
       <button data-action="qa" class="${ep.qa_done ? "done" : ""}">⑥ 品質檢查</button>
@@ -439,7 +545,8 @@ function renderDetail(ep) {
   div.querySelector('[data-action="bumper"]').onclick = () => {
     // 按鈕在 BRANDS 為空時是 disabled 狀態，能點到這裡就代表 brandSelect 一定存在。
     const brand = div.querySelector('[data-brand-select]').value;
-    runStage(ep.episode, "bumper", `&brand=${encodeURIComponent(brand)}`);
+    const transition = div.querySelector('[data-transition-select]').value;
+    runStage(ep.episode, "bumper", `&brand=${encodeURIComponent(brand)}&transition=${encodeURIComponent(transition)}`);
   };
   div.querySelector('[data-action="qa"]').onclick = () => runStage(ep.episode, "qa");
   div.querySelectorAll('[data-action="translate"]').forEach(btn => {
@@ -471,17 +578,34 @@ const OUTPUT_VERSIONS = [
 ];
 
 function renderOutputs(ep) {
-  const rows = OUTPUT_VERSIONS.filter(v => ep[v.key]).map(v => {
-    const file = `${ep.episode}_${v.suffix}.mp4`;
-    const highlight = v.key === "final" ? "output-row final" : "output-row";
-    return `
-      <div class="${highlight}">
-        <span class="output-label">${v.label}</span>
-        <span class="output-desc">${v.desc}</span>
-        <a href="/output/${file}" target="_blank">▶ 播放</a>
-        <a href="/output/${file}" download="${file}">⬇ 下載</a>
-      </div>`;
+  let rows = [];
+  OUTPUT_VERSIONS.forEach(v => {
+    if (ep[v.key]) {
+      const file = `${ep.episode}_${v.suffix}.mp4`;
+      const highlight = v.key === "final" ? "output-row final" : "output-row";
+      rows.push(`
+        <div class="${highlight}">
+          <span class="output-label">${v.label} (最新版)</span>
+          <span class="output-desc">${v.desc}</span>
+          <a href="/output/${file}" target="_blank">▶ 播放</a>
+          <a href="/output/${file}" download="${file}">⬇ 下載</a>
+        </div>`);
+
+      // 歷史版本
+      const vers = (ep.versions && ep.versions[v.key]) || [];
+      vers.forEach(num => {
+        const verFile = `${ep.episode}_${v.suffix}_v${num}.mp4`;
+        rows.push(`
+          <div class="output-row" style="opacity:0.75; font-size:0.9rem; border-left:3px solid var(--soft); padding-left: 10px;">
+            <span class="output-label" style="font-weight:normal; color:#aaa;">├─ 歷史版 v${num}</span>
+            <span class="output-desc" style="color:#888;">產生新版本之前的備份存檔</span>
+            <a href="/output/${verFile}" target="_blank">▶ 播放</a>
+            <a href="/output/${verFile}" download="${verFile}">⬇ 下載</a>
+          </div>`);
+      });
+    }
   });
+
   const srtRows = (ep.translated_langs || []).map(lang => {
     const file = `${ep.episode}_${lang}.srt`;
     return `
@@ -491,6 +615,7 @@ function renderOutputs(ep) {
         <a href="/output/${file}" download="${file}">⬇ 下載</a>
       </div>`;
   });
+
   const allRows = rows.concat(srtRows);
   if (allRows.length === 0) return "";
   return `<div class="outputs-block"><div class="outputs-title">產出檔案：</div>${allRows.join("")}</div>`;
@@ -714,7 +839,7 @@ async function loadQaReport(div, episode) {
       <div>
         品質檢查結果（來源：${data.source_stage || "?"}，抽幀 ${data.contact_sheet_frames || "?"} 張／
         ${data.contact_sheet_grid || "?"} 網格）：
-        <a href="${sheetUrl}" target="_blank">開啟抽幀總覽圖 ↗</a>
+        <a href="${sheetUrl}" target="_blank" onclick="openImgModal('${sheetUrl}'); return false;">開啟抽幀總覽圖 ↗ (點擊直接放大預覽)</a>
       </div>
       ${aspectWarningHtml}
       ${data.caption_sync_dropped_events ? `<div class="flagged-item"><span class="txt">ℹ 有 ${data.caption_sync_dropped_events} 句字幕落在跳剪剪掉的區間，這次比對已略過。</span></div>` : ""}
@@ -723,6 +848,82 @@ async function loadQaReport(div, episode) {
         : `<div style="margin-top:8px;color:var(--soft);">沒有偵測到可疑字幕（安靜偵測本身可能有誤差，不代表 100% 對準，仍建議打開抽幀總覽圖看一眼）。</div>`}
     </div>
   `;
+}
+
+// ---------- 圖片放大燈箱 JS ----------
+let currentZoom = 1.0;
+let isDraggingImg = false;
+let startX = 0, startY = 0;
+let scrollLeft = 0, scrollTop = 0;
+
+function openImgModal(src) {
+  const modal = document.getElementById("imgModal");
+  const modalImg = document.getElementById("imgModalImg");
+  modalImg.src = src;
+  modal.style.display = "flex";
+  resetZoomImg();
+  document.body.style.overflow = "hidden"; // 避免底層背景滾動
+}
+
+function closeImgModal() {
+  document.getElementById("imgModal").style.display = "none";
+  document.body.style.overflow = "";
+}
+
+function zoomImg(delta) {
+  const modalImg = document.getElementById("imgModalImg");
+  currentZoom = Math.max(0.4, Math.min(4.0, currentZoom + delta));
+  modalImg.style.transform = `scale(${currentZoom})`;
+  document.getElementById("imgModalZoomVal").textContent = `${Math.round(currentZoom * 100)}%`;
+}
+
+function resetZoomImg() {
+  const modalImg = document.getElementById("imgModalImg");
+  currentZoom = 1.0;
+  modalImg.style.transform = "scale(1)";
+  modalImg.style.left = "0px";
+  modalImg.style.top = "0px";
+  modalImg.style.position = "relative";
+  document.getElementById("imgModalZoomVal").textContent = "100%";
+}
+
+// 監聽拖曳移動圖片 (平移)
+const modalImgEl = document.getElementById("imgModalImg");
+const modalWrapEl = document.getElementById("imgModal");
+
+if (modalImgEl) {
+  modalImgEl.addEventListener("mousedown", (e) => {
+    isDraggingImg = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    const styleLeft = parseInt(modalImgEl.style.left) || 0;
+    const styleTop = parseInt(modalImgEl.style.top) || 0;
+    scrollLeft = styleLeft;
+    scrollTop = styleTop;
+    modalImgEl.style.position = "relative";
+    e.preventDefault();
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!isDraggingImg) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    modalImgEl.style.left = (scrollLeft + dx) + "px";
+    modalImgEl.style.top = (scrollTop + dy) + "px";
+  });
+
+  window.addEventListener("mouseup", () => {
+    isDraggingImg = false;
+  });
+
+  // 點選背景關閉燈箱
+  if (modalWrapEl) {
+    modalWrapEl.addEventListener("click", (e) => {
+      if (e.target === modalWrapEl) {
+        closeImgModal();
+      }
+    });
+  }
 }
 
 // 從字幕編輯頁點「是，套用跳剪」跳轉過來時帶 ?episode=X&autorun=jumpcut，

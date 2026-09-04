@@ -1,10 +1,434 @@
 {
+  "疫情": {
+    "correct": "義行",
+    "count": 1
+  },
+  "宇童": {
+    "correct": "語彤",
+    "count": 3
+  },
+  "與同": {
+    "correct": "語彤",
+    "count": 1
+  },
+  "粗型": {
+    "correct": "出勤",
+    "count": 1
+  },
+  "入境": {
+    "correct": "路徑",
+    "count": 1
+  },
+  "府退": {
+    "correct": "輔會",
+    "count": 1
+  },
+  "ISO": {
+    "correct": "Excel",
+    "count": 6
+  },
+  "檢視": {
+    "correct": "解釋",
+    "count": 1
+  },
+  "Excel": {
+    "correct": "可以使用",
+    "count": 2
+  },
+  "ookup": {
+    "correct": "OOKUP",
+    "count": 1
+  },
+  "witch": {
+    "correct": "WITCH",
+    "count": 1
+  },
+  "索稅": {
+    "correct": "瑣碎",
+    "count": 1
+  },
+  "反鎖": {
+    "correct": "繁瑣",
+    "count": 1
+  },
+  "歷經": {
+    "correct": "立即",
+    "count": 1
+  },
+  "ASU": {
+    "correct": "Excel",
+    "count": 3
+  },
+  "值得": {
+    "correct": "直的",
+    "count": 1
+  },
+  "以使用": {
+    "correct": "Excel",
+    "count": 1
+  },
+  "你的X": {
+    "correct": "Excel",
+    "count": 1
+  },
+  "電視": {
+    "correct": "辨識",
+    "count": 1
+  },
+  "SC": {
+    "correct": "xcel",
+    "count": 1
+  },
+  "de": {
+    "correct": "gn",
+    "count": 5
+  },
+  "onth": {
+    "correct": "ONTH",
+    "count": 1
+  },
+  "ate": {
+    "correct": "AY",
+    "count": 1
+  },
+  "ear": {
+    "correct": "EAR",
+    "count": 1
+  },
+  "oday": {
+    "correct": "ODAY",
+    "count": 1
+  },
+  "ow": {
+    "correct": "OW",
+    "count": 1
+  },
+  "侮辱": {
+    "correct": "五入",
+    "count": 1
+  },
+  "副檔": {
+    "correct": "複雜",
+    "count": 1
+  },
+  "綴制": {
+    "correct": "贅字",
+    "count": 1
+  },
+  "常景": {
+    "correct": "場警",
+    "count": 1
+  },
+  "無法": {
+    "correct": "不能",
+    "count": 4
+  },
+  "xcel件": {
+    "correct": "可以使用鍵",
+    "count": 1
+  },
+  "助示": {
+    "correct": "公式",
+    "count": 1
+  },
+  "食物": {
+    "correct": "實務",
+    "count": 1
+  },
+  "olor": {
+    "correct": "OLUMN",
+    "count": 1
+  },
+  "eek": {
+    "correct": "EEK",
+    "count": 1
+  },
+  "ib": {
+    "correct": "IF",
+    "count": 1
+  },
+  "個件": {
+    "correct": "一鍵",
+    "count": 2
+  },
+  "ff": {
+    "correct": "DAY",
+    "count": 8
+  },
+  "不能": {
+    "correct": "無法",
+    "count": 1
+  },
+  "一字": {
+    "correct": "來自",
+    "count": 2
+  },
+  "只調": {
+    "correct": "直條",
+    "count": 2
+  },
+  "件字": {
+    "correct": "鍵自",
+    "count": 1
+  },
+  "XOff": {
+    "correct": "SUM",
+    "count": 2
+  },
+  "XOff一副": {
+    "correct": "SUMIF",
+    "count": 1
+  },
+  "TE": {
+    "correct": "DAY",
+    "count": 2
+  },
+  "質量": {
+    "correct": "資料",
+    "count": 1
+  },
+  "原型": {
+    "correct": "圓形",
+    "count": 2
+  },
+  "助主": {
+    "correct": "工逐",
+    "count": 1
+  },
+  "周字": {
+    "correct": "週值",
+    "count": 1
+  },
+  "加緊": {
+    "correct": "不僅",
+    "count": 1
+  },
+  "建議": {
+    "correct": "介面",
+    "count": 1
+  },
+  "olon": {
+    "correct": "OLUMN",
+    "count": 1
+  },
+  "ffX": {
+    "correct": "NTH",
+    "count": 1
+  },
+  "一形": {
+    "correct": "進行",
+    "count": 2
+  },
+  "etwork": {
+    "correct": "ETWORK",
+    "count": 1
+  },
+  "起價": {
+    "correct": "請假",
+    "count": 1
+  },
+  "EOMONTH": {
+    "correct": "入IF",
+    "count": 1
+  },
+  "出夜": {
+    "correct": "一頁",
+    "count": 1
+  },
+  "出件": {
+    "correct": "一鍵",
+    "count": 2
+  },
+  "介面": {
+    "correct": "建議",
+    "count": 2
+  },
+  "以及助": {
+    "correct": "起來作",
+    "count": 2
+  },
+  "條件": {
+    "correct": "清單",
+    "count": 10
+  },
+  "清單": {
+    "correct": "條件",
+    "count": 1
+  },
+  "值後": {
+    "correct": "期最",
+    "count": 1
+  },
+  "拍板": {
+    "correct": "排版",
+    "count": 1
+  },
+  "助私": {
+    "correct": "公司",
+    "count": 2
+  },
+  "營運": {
+    "correct": "盈餘",
+    "count": 1
+  },
+  "游試": {
+    "correct": "由四",
+    "count": 1
+  },
+  "xcel": {
+    "correct": "可以使用",
+    "count": 3
+  },
+  "ATA": {
+    "correct": "ata",
+    "count": 4
+  },
+  "關鍵": {
+    "correct": "條件",
+    "count": 1
+  },
+  "進進切": {
+    "correct": "執行確",
+    "count": 1
+  },
+  "進進": {
+    "correct": "執行",
+    "count": 2
+  },
+  "Math": {
+    "correct": "Exc",
+    "count": 1
+  },
+  "xcelOff": {
+    "correct": "可以使用",
+    "count": 1
+  },
+  "ay": {
+    "correct": "AY",
+    "count": 1
+  },
+  "瓜壺": {
+    "correct": "括弧",
+    "count": 1
+  },
+  "時間": {
+    "correct": "的話",
+    "count": 1
+  },
+  "項切": {
+    "correct": "下確",
+    "count": 1
+  },
+  "RIGHT": {
+    "correct": "ter",
+    "count": 1
+  },
+  "後項": {
+    "correct": "最下",
+    "count": 1
+  },
+  ".": {
+    "correct": "、",
+    "count": 4
+  },
+  "與": {
+    "correct": "於",
+    "count": 1
+  },
+  "d": {
+    "correct": "t",
+    "count": 1
+  },
+  "的": {
+    "correct": " ",
+    "count": 2
+  },
+  "d的": {
+    "correct": "t ",
+    "count": 1
+  },
+  "理念": {
+    "correct": "裡面",
+    "count": 1
+  },
+  "調": {
+    "correct": "條",
+    "count": 2
+  },
+  "餘率": {
+    "correct": "一律",
+    "count": 1
+  },
+  "形": {
+    "correct": "型",
+    "count": 2
+  },
+  "rles": {
+    "correct": "t ",
+    "count": 1
+  },
   "藍": {
     "correct": "欄",
-    "count": 1
+    "count": 2
   },
   "裂": {
     "correct": "列",
+    "count": 1
+  },
+  "er": {
+    "correct": "lot",
+    "count": 1
+  },
+  "Isi": {
+    "correct": "Exce",
+    "count": 1
+  },
+  "地": {
+    "correct": "第",
+    "count": 1
+  },
+  "條件依照": {
+    "correct": "清單",
+    "count": 1
+  },
+  "會": {
+    "correct": "可以",
+    "count": 1
+  },
+  "組黨": {
+    "correct": "主檔",
+    "count": 1
+  },
+  "Exc": {
+    "correct": "可以",
+    "count": 5
+  },
+  "資源": {
+    "correct": "字元",
+    "count": 2
+  },
+  "阻擋": {
+    "correct": "主檔",
+    "count": 3
+  },
+  "字元": {
+    "correct": "資源",
+    "count": 1
+  },
+  "可以": {
+    "correct": "Excel",
+    "count": 1
+  },
+  "可以使用": {
+    "correct": "Excel",
+    "count": 2
+  },
+  "插的": {
+    "correct": "Chat",
+    "count": 3
+  },
+  "盈餘": {
+    "correct": "營運",
     "count": 1
   }
 }
