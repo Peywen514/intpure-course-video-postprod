@@ -35,6 +35,25 @@
   .sidebar-item.active .progress-bar-fill { background:var(--ok); }
   .sidebar-empty { padding:16px 14px; color:var(--soft); font-size:0.85rem; }
 
+  .queue-panel {
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:14px 20px; margin-bottom:18px; font-size:0.85rem;
+  }
+  .queue-title { font-weight:600; margin-bottom:8px; color:var(--text); }
+  .queue-running { display:flex; align-items:center; gap:6px; color:var(--text); }
+  .queue-item { display:flex; align-items:center; gap:8px; padding:4px 0; color:var(--soft); }
+  .queue-cancel-btn {
+    background:none; color:var(--err); border:1px solid #f0c4bd; padding:2px 8px;
+    font-size:0.76rem; border-radius:6px; cursor:pointer;
+  }
+  .queue-cancel-btn:hover { background:#fbe9e7; }
+  .queue-spinner {
+    width:12px; height:12px; border-radius:50%; flex:none;
+    border:2px solid currentColor; border-top-color:transparent; opacity:0.6;
+    animation:queue-spin 0.7s linear infinite;
+  }
+  @keyframes queue-spin { to { transform:rotate(360deg); } }
+
   .detail {
     flex:1; min-width:0; background:var(--card); border:1px solid var(--border); border-radius:12px;
     padding:20px 24px;
@@ -148,6 +167,12 @@
       <button data-import-kind="outro" class="brand-import-btn">匯入片尾</button>
     </div>
     <div class="brand-import-msg" id="brandImportMsg"></div>
+  </div>
+
+  <div class="queue-panel" id="queuePanel" hidden>
+    <div class="queue-title">工作佇列（全部集數共用一條隊伍，一次只跑一個，最多同時排 <span id="queueMax"></span> 個）</div>
+    <div class="queue-running" id="queueRunning"></div>
+    <div id="queueList"></div>
   </div>
 
   <div class="layout">
@@ -719,6 +744,48 @@ async function handleAutorun() {
 }
 
 Promise.all([loadTranslateLangs(), loadBrands()]).then(loadEpisodes).then(handleAutorun);
+
+// 全域佇列狀態列：不管是哪一列按鈕觸發的、或畫面重新整理過幾次，這裡永遠看得到
+// 目前排到哪裡、還在排隊的每一項都能單獨取消（只能取消還沒開始跑的）。
+async function refreshQueueStatus() {
+  const res = await fetch("/api/queue_status");
+  const data = await res.json();
+  const panel = document.getElementById("queuePanel");
+  const runningEl = document.getElementById("queueRunning");
+  const listEl = document.getElementById("queueList");
+  document.getElementById("queueMax").textContent = data.max_queued;
+
+  if (!data.running && data.queued.length === 0) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+
+  runningEl.innerHTML = data.running
+    ? `<span class="queue-spinner"></span>正在執行：${data.running.episode}　${data.running.label}`
+    : "目前沒有工作在執行";
+
+  listEl.innerHTML = data.queued.length === 0 ? "" : data.queued.map(j =>
+    `<div class="queue-item">排隊中：${j.episode}　${j.label}
+      <button class="queue-cancel-btn" data-job-id="${j.job_id}">✕ 取消</button>
+    </div>`
+  ).join("");
+}
+
+document.getElementById("queuePanel").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".queue-cancel-btn");
+  if (!btn) return;
+  btn.disabled = true;
+  const res = await fetch(`/api/queue_cancel?job_id=${encodeURIComponent(btn.dataset.jobId)}`, { method: "POST" });
+  if (!res.ok) {
+    const data = await res.json();
+    alert(data.error || "取消失敗");
+  }
+  refreshQueueStatus();
+});
+
+refreshQueueStatus();
+setInterval(refreshQueueStatus, 1500);
 </script>
 </body>
 </html>

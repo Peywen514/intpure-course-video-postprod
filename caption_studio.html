@@ -30,10 +30,24 @@
   .back-link:hover { text-decoration:underline; }
   .hint { color:#999; font-size:0.8rem; margin-bottom:14px; }
   .stage {
-    position: relative; width: 100%; max-width: 560px; aspect-ratio: 16/9;
+    position: relative; width: 100%; max-width: 560px; min-width: 240px; aspect-ratio: 16/9;
     background: #000; border-radius: 8px; overflow: hidden; margin: 0 auto 10px;
+    resize: horizontal;
+    /* 只開橫向 resize，不開 resize:both——高度繼續交給上面的 aspect-ratio:16/9 自動算，
+       拖曳只會改 inline width，字幕位置拖拉調整（下面 stage.clientWidth/Height 那段
+       換算邏輯）才不會因為使用者把框拉成非 16:9 而算錯實際字幕位置。 */
   }
-  video { width: 100%; height:100%; display: block; }
+  video { width: 100%; height:100%; display: block; object-fit: contain; }
+  .resize-hint { color:#666; font-size:0.72rem; text-align:right; margin:-4px 0 10px; max-width:560px; margin-left:auto; margin-right:auto; }
+  /* 版面切換（垂直／左右）：預設（無 data-layout 或 vertical）完全維持原本上下堆疊排版，
+     不影響任何人；只有主動切成 split 才會變左右兩欄，純視覺切換不動任何邏輯。 */
+  body[data-layout="split"] .wrap { max-width: 1600px; }
+  body[data-layout="split"] .editor-layout { display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; }
+  body[data-layout="split"] .video-col { flex:0 1 520px; min-width:320px; }
+  body[data-layout="split"] .caption-col { flex:1 1 480px; min-width:320px; }
+  body[data-layout="split"] .stage { max-width:100%; margin:0 0 10px; }
+  body[data-layout="split"] .resize-hint { max-width:none; text-align:left; margin-left:0; }
+  body[data-layout="split"] .teleprompter { height: calc(100vh - 220px); }
 
   /* 字幕位置/寬度覆蓋層（拖拉調整用，來自原 picker/index.html） */
   .caption-box {
@@ -202,56 +216,63 @@
   <h1>字幕編輯（<span id="episode-label"></span>）
     <button type="button" id="usageHintBtn" class="hint-inline-btn" title="重新看一次使用說明">? 使用說明</button>
   </h1>
-  <div class="stage" id="stage">
-    <video id="video" controls></video>
-    <div class="caption-box" id="captionBox">
-      <span class="width-label" id="widthLabel"></span>
-      <div class="handle-w left" data-side="left"></div>
-      <span class="txt" id="captionText">（拖動時間軸看實際字幕文字）</span>
-      <div class="handle-w right" data-side="right"></div>
+  <div class="editor-layout">
+    <div class="video-col">
+      <div class="stage" id="stage">
+        <video id="video" controls></video>
+        <div class="caption-box" id="captionBox">
+          <span class="width-label" id="widthLabel"></span>
+          <div class="handle-w left" data-side="left"></div>
+          <span class="txt" id="captionText">（拖動時間軸看實際字幕文字）</span>
+          <div class="handle-w right" data-side="right"></div>
+        </div>
+      </div>
+      <div class="resize-hint">↔ 拖右邊界可調整影片視窗寬度（高度依 16:9 自動跟著變，不影響字幕位置換算）</div>
+      <div class="style-controls">
+        <div class="field">
+          <label title="MarginV，離底部距離，越大越高">高度</label>
+          <div class="row"><input type="range" id="marginV" min="20" max="400" step="2"><span class="val" id="marginVVal"></span></div>
+        </div>
+        <div class="field">
+          <label title="左右邊界 MarginL/MarginR，越小越寬">寬度</label>
+          <div class="row"><input type="range" id="marginLR" min="20" max="400" step="2"><span class="val" id="marginLRVal"></span></div>
+        </div>
+        <div class="field">
+          <label title="Spacing">字間距</label>
+          <div class="row"><input type="range" id="spacing" min="0" max="12" step="0.5"><span class="val" id="spacingVal"></span></div>
+        </div>
+        <div class="field">
+          <label title="Fontsize">字體大小</label>
+          <div class="row"><input type="range" id="fontSize" min="30" max="140" step="2"><span class="val" id="fontSizeVal"></span></div>
+        </div>
+        <div class="field">
+          <label title="黑框粗細 Outline">字框</label>
+          <div class="row"><input type="range" id="outline" min="0" max="10" step="0.5"><span class="val" id="outlineVal"></span></div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <label>播放速度
+          <select id="speedSelect">
+            <option value="0.75">0.75x</option>
+            <option value="1" selected>1x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="1.75">1.75x</option>
+            <option value="2">2x</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="shadowMode"> 跟讀模式（播完這句自動暫停）</label>
+      </div>
     </div>
-  </div>
-  <div class="style-controls">
-    <div class="field">
-      <label title="MarginV，離底部距離，越大越高">高度</label>
-      <div class="row"><input type="range" id="marginV" min="20" max="400" step="2"><span class="val" id="marginVVal"></span></div>
+    <div class="caption-col">
+      <div class="teleprompter" id="teleprompter">
+        <div class="list" id="list"></div>
+      </div>
+      <div class="cuts-list" id="cutsList" style="display:none;">
+        <div class="cuts-title">待剪除的贅詞/口誤片段（暫存後才會真的在跳剪套用）：</div>
+        <div id="cutsItems"></div>
+      </div>
     </div>
-    <div class="field">
-      <label title="左右邊界 MarginL/MarginR，越小越寬">寬度</label>
-      <div class="row"><input type="range" id="marginLR" min="20" max="400" step="2"><span class="val" id="marginLRVal"></span></div>
-    </div>
-    <div class="field">
-      <label title="Spacing">字間距</label>
-      <div class="row"><input type="range" id="spacing" min="0" max="12" step="0.5"><span class="val" id="spacingVal"></span></div>
-    </div>
-    <div class="field">
-      <label title="Fontsize">字體大小</label>
-      <div class="row"><input type="range" id="fontSize" min="30" max="140" step="2"><span class="val" id="fontSizeVal"></span></div>
-    </div>
-    <div class="field">
-      <label title="黑框粗細 Outline">字框</label>
-      <div class="row"><input type="range" id="outline" min="0" max="10" step="0.5"><span class="val" id="outlineVal"></span></div>
-    </div>
-  </div>
-  <div class="toolbar">
-    <label>播放速度
-      <select id="speedSelect">
-        <option value="0.75">0.75x</option>
-        <option value="1" selected>1x</option>
-        <option value="1.25">1.25x</option>
-        <option value="1.5">1.5x</option>
-        <option value="1.75">1.75x</option>
-        <option value="2">2x</option>
-      </select>
-    </label>
-    <label><input type="checkbox" id="shadowMode"> 跟讀模式（播完這句自動暫停）</label>
-  </div>
-  <div class="teleprompter" id="teleprompter">
-    <div class="list" id="list"></div>
-  </div>
-  <div class="cuts-list" id="cutsList" style="display:none;">
-    <div class="cuts-title">待剪除的贅詞/口誤片段（暫存後才會真的在跳剪套用）：</div>
-    <div id="cutsItems"></div>
   </div>
 </div>
 <div class="floaty-actions">
@@ -263,6 +284,7 @@
   <button id="applyBtn" title="套用字幕：暫存並重新燒錄字幕到影片">🎬</button>
   <button id="fillerBtn" title="③ 下一步：偵測贅詞（分析贅詞與靜音片段，跑完後回儀表板勾選要剪哪些）">🔍</button>
   <button id="shortcutSettingsBtn" title="快捷鍵設定">⌨️</button>
+  <button id="layoutToggleBtn" title="切換版面：垂直／左右並排">⇄</button>
 </div>
 <button id="pauseBtn" class="floaty" title="暫停/播放（快捷鍵可自訂，預設 Space）">⏯</button>
 
@@ -1300,6 +1322,21 @@ usageHintModal.addEventListener("click", (e) => {
   saveHintState({ ...state, lastShownDate: today });
   openUsageHint();
 })();
+
+// ---------- 版面切換（垂直／左右）：跟版型設定同一套 localStorage 慣例，
+// 是這台瀏覽器的個人偏好，不影響其他人、也不影響任何字幕/位置資料本身。----------
+const LAYOUT_STORAGE_KEY = "caption_studio_layout_v1";
+function applyLayout(mode) {
+  document.body.dataset.layout = mode;
+  document.getElementById("layoutToggleBtn").title =
+    mode === "split" ? "切換版面：目前左右並排，點一下改回垂直" : "切換版面：目前垂直，點一下改成左右並排";
+}
+applyLayout(localStorage.getItem(LAYOUT_STORAGE_KEY) || "vertical");
+document.getElementById("layoutToggleBtn").addEventListener("click", () => {
+  const next = document.body.dataset.layout === "split" ? "vertical" : "split";
+  localStorage.setItem(LAYOUT_STORAGE_KEY, next);
+  applyLayout(next);
+});
 
 load();
 </script>

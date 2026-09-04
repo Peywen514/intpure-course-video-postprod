@@ -70,6 +70,9 @@ from lib.pipeline import (  # noqa: E402
 
 JOBS = {}
 JOBS_LOCK = threading.Lock()
+# job_id -> {"episode":..., "stage_label":..., "dedupe_key":...}，跟 JOBS 的 status 分開存，
+# 避免 _job_worker_loop 整包覆寫 JOBS[job_id] 時把這些資訊一起洗掉。
+JOB_META = {}
 
 # 全部工作一律排隊、一次只跑一個：stage_transcribe 共用一個全域 faster-whisper
 # 模型物件（見 lib/whisper_transcribe.py），沒驗證過並發呼叫是否安全；其他階段
@@ -81,23 +84,69 @@ JOB_ORDER = []  # 依排隊順序的 job_id，最前面那個是正在跑或即�
 MAX_QUEUED_JOBS = 3  # 公司 OA 機器規格有限，同時排隊工作數上限，超過要請使用者等前面跑完
 
 
-def start_job(fn, *args, **kwargs):
-    """回傳 job_id；佇列（含正在跑的那個）已達 MAX_QUEUED_JOBS 上限時回傳 None。"""
-    with JOB_ORDER_LOCK:
+def start_job(fn, *args, meta=None, dedupe_key=None, **kwargs):
+    """回傳 job_id；佇列（含正在跑的那個）已達 MAX_QUEUED_JOBS 上限時回傳 None。
+    meta：給畫面顯示用的 {"episode":..., "stage_label":...}。
+    dedupe_key：同一個 key 如果已經排隊中/執行中，直接回傳那個既有 job_id，不佔新的
+    佇列名額——同一個階段被連點好幾次（例如以為沒反應又多按幾次）不會疊加，也不會
+    無謂撞上 MAX_QUEUED_JOBS 上限。
+    去重檢查跟真正建立工作必須是同一段鎖（原本分兩段各自 acquire/release，中間有空隙：
+    兩個分頁幾乎同時點同一個階段時，兩邊都可能在對方插入 JOB_ORDER 之前完成檢查、誤判
+    「沒有重複」，結果真的建立兩個重複工作，去重機制形同虛設）。"""
+    with JOBS_LOCK, JOB_ORDER_LOCK:
+        if dedupe_key:
+            for jid in JOB_ORDER:
+                if (
+                    JOB_META.get(jid, {}).get("dedupe_key") == dedupe_key
+                    and JOBS.get(jid, {}).get("status") in ("queued", "running")
+                ):
+                    return jid
+
         if len(JOB_ORDER) >= MAX_QUEUED_JOBS:
             return None
         job_id = uuid.uuid4().hex[:8]
         JOB_ORDER.append(job_id)
-    with JOBS_LOCK:
         JOBS[job_id] = {"status": "queued", "message": "", "result": None}
+        JOB_META[job_id] = {**(meta or {}), "dedupe_key": dedupe_key}
     JOB_QUEUE.put((job_id, fn, args, kwargs))
     return job_id
+
+
+def cancel_job(job_id):
+    """只能取消還在排隊、還沒開始跑的工作。已經在跑的（ffmpeg/whisper 子行程已經啟動）
+    目前沒有安全中止的機制，回傳 False 讓前端顯示「執行中無法取消」。"""
+    with JOBS_LOCK:
+        if JOBS.get(job_id, {}).get("status") != "queued":
+            return False
+        JOBS[job_id] = {"status": "cancelled", "message": "已取消", "result": None}
+    with JOB_ORDER_LOCK:
+        if job_id in JOB_ORDER:
+            JOB_ORDER.remove(job_id)
+    return True
+
+
+def get_queue_status():
+    with JOBS_LOCK, JOB_ORDER_LOCK:
+        running = None
+        queued = []
+        for jid in JOB_ORDER:
+            status = JOBS.get(jid, {}).get("status")
+            meta = JOB_META.get(jid, {})
+            entry = {"job_id": jid, "episode": meta.get("episode", ""), "label": meta.get("stage_label", "")}
+            if status == "running":
+                running = entry
+            elif status == "queued":
+                queued.append(entry)
+        return {"running": running, "queued": queued, "max_queued": MAX_QUEUED_JOBS}
 
 
 def _job_worker_loop():
     while True:
         job_id, fn, args, kwargs = JOB_QUEUE.get()
         with JOBS_LOCK:
+            if JOBS.get(job_id, {}).get("status") == "cancelled":
+                JOB_QUEUE.task_done()
+                continue  # 排隊時就被取消了，跳過不執行
             JOBS[job_id] = {"status": "running", "message": "", "result": None}
         try:
             result = fn(*args, **kwargs)
@@ -157,6 +206,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 with JOB_ORDER_LOCK:
                     job["position"] = JOB_ORDER.index(job_id) if job_id in JOB_ORDER else 0
             return self._send_json(job)
+
+        if parsed.path == "/api/queue_status":  # 全域佇列總覽：正在跑的 + 排隊中的清單，畫面頂部常駐顯示
+            return self._send_json(get_queue_status())
 
         if parsed.path == "/api/filler":
             episode = qs.get("episode", [""])[0]
@@ -285,35 +337,63 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         # 除了不需要 episode 的三個端點，其餘全部會把 episode 拼進 WORK_DIR/INPUT_DIR/
         # OUTPUT_DIR 路徑——在這裡統一擋一次，不必每個 handler 各自檢查一遍。
-        _episode_exempt = ("/api/clear_all", "/api/upload", "/api/brands/import_path")
+        _episode_exempt = ("/api/clear_all", "/api/upload", "/api/brands/import_path", "/api/queue_cancel")
         if parsed.path not in _episode_exempt and not _is_safe_episode(episode):
             return self._send_json({"error": "無效的集數名稱"}, status=400)
 
         if parsed.path == "/api/run/transcribe":
-            return self._start_job_response(stage_transcribe, episode)
+            return self._start_job_response(
+                stage_transcribe, episode,
+                meta={"episode": episode, "stage_label": "① 開始轉錄"},
+                dedupe_key=f"{episode}:transcribe",
+            )
 
         if parsed.path == "/api/run/captions":
-            return self._start_job_response(stage_captions, episode)
+            return self._start_job_response(
+                stage_captions, episode,
+                meta={"episode": episode, "stage_label": "匹配字幕"},
+                dedupe_key=f"{episode}:captions",
+            )
 
         if parsed.path == "/api/run/filler_detect":
-            return self._start_job_response(stage_filler_detect, episode)
+            return self._start_job_response(
+                stage_filler_detect, episode,
+                meta={"episode": episode, "stage_label": "偵測贅詞"},
+                dedupe_key=f"{episode}:filler_detect",
+            )
 
         if parsed.path == "/api/run/jumpcut":
-            return self._start_job_response(stage_jumpcut, episode)
+            return self._start_job_response(
+                stage_jumpcut, episode,
+                meta={"episode": episode, "stage_label": "套用跳剪"},
+                dedupe_key=f"{episode}:jumpcut",
+            )
 
         if parsed.path == "/api/run/bumper":
             brand = qs.get("brand", [DEFAULT_BRAND])[0]
-            return self._start_job_response(stage_bumper, episode, brand)
+            return self._start_job_response(
+                stage_bumper, episode, brand,
+                meta={"episode": episode, "stage_label": "套用片頭尾"},
+                dedupe_key=f"{episode}:bumper",
+            )
 
         if parsed.path == "/api/run/qa":  # ⑧ 品質檢查：一樣走 start_job 進佇列排隊
-            return self._start_job_response(stage_qa, episode)
+            return self._start_job_response(
+                stage_qa, episode,
+                meta={"episode": episode, "stage_label": "品質檢查"},
+                dedupe_key=f"{episode}:qa",
+            )
 
         if parsed.path == "/api/run/translate":  # ⑨ 字幕翻譯，lang 沒帶就用第一個設定值
             default_lang = TRANSLATE_TARGET_LANGS[0] if TRANSLATE_TARGET_LANGS else None
             lang = qs.get("lang", [default_lang])[0]
             if not lang:
                 return self._send_json({"error": "未設定翻譯目標語言（TRANSLATE_TARGET_LANGS 是空的）"}, status=400)
-            return self._start_job_response(stage_translate, episode, lang)
+            return self._start_job_response(
+                stage_translate, episode, lang,
+                meta={"episode": episode, "stage_label": f"翻譯（{lang}）"},
+                dedupe_key=f"{episode}:translate:{lang}",
+            )
 
         # B-Roll 規劃階段（已接 Pexels 引擎下載素材，尚無儀表板 UI，先開 API 供標記工具呼叫）
         if parsed.path == "/api/broll/save_markers":
@@ -322,10 +402,25 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return self._send_json({"ok": True})
 
         if parsed.path == "/api/run/broll_plan":
-            return self._start_job_response(stage_broll_plan, episode)
+            return self._start_job_response(
+                stage_broll_plan, episode,
+                meta={"episode": episode, "stage_label": "B-Roll 規劃"},
+                dedupe_key=f"{episode}:broll_plan",
+            )
 
         if parsed.path == "/api/run/broll_generate":  # 實際去 Pexels 搜尋下載素材
-            return self._start_job_response(stage_broll_generate, episode)
+            return self._start_job_response(
+                stage_broll_generate, episode,
+                meta={"episode": episode, "stage_label": "B-Roll 產生"},
+                dedupe_key=f"{episode}:broll_generate",
+            )
+
+        if parsed.path == "/api/queue_cancel":  # 取消還在排隊、還沒開始跑的工作
+            job_id = qs.get("job_id", [""])[0]
+            ok = cancel_job(job_id)
+            if not ok:
+                return self._send_json({"error": "這個工作已經在跑或已經結束，無法取消"}, status=409)
+            return self._send_json({"ok": True})
 
         if parsed.path == "/api/filler/confirm":
             body = self._read_json_body()
