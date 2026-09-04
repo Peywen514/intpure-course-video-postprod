@@ -4,7 +4,26 @@
 <meta charset="UTF-8">
 <title>字幕編輯（校對／位置／套用）</title>
 <style>
-  body { margin:0; background:#1c1b19; color:#eee; font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; }
+  @font-face {
+    font-family: "Noto Sans TC";
+    src: url("/fonts/NotoSansTC-Bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: normal;
+  }
+  @font-face {
+    font-family: "Noto Sans CJK TC";
+    src: url("/fonts/NotoSansCJKtc-Bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: normal;
+  }
+  @font-face {
+    font-family: "Noto Sans CJK TC";
+    src: url("/fonts/NotoSansCJKtc-Regular.otf") format("opentype");
+    font-weight: normal;
+    font-style: normal;
+  }
+
+  body { margin:0; background:#1c1b19; color:#eee; font-family:"Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif; }
   .wrap { max-width: 980px; margin: 0 auto; padding: 20px; }
   h1 { font-size: 1.1rem; font-weight: 600; color:#ccc; margin-bottom:4px; }
   .hint-inline-btn {
@@ -230,6 +249,18 @@
       <label title="黑框粗細 Outline">字框</label>
       <div class="row"><input type="range" id="outline" min="0" max="10" step="0.5"><span class="val" id="outlineVal"></span></div>
     </div>
+    <div class="field">
+      <label>文字字型(Fontname)</label>
+      <div class="row">
+        <select id="fontName" style="width:100%; background:#242320; color:#eee; border:1px solid #3a382f; border-radius:6px; padding:4px 8px; font-size:0.85rem; height: 30px;">
+          <option value="Noto Sans CJK TC">思源黑體 (Noto Sans CJK TC)</option>
+          <option value="Microsoft JhengHei">微軟正黑體 (Microsoft JhengHei)</option>
+          <option value="Noto Sans TC">思源黑體 (Noto Sans TC - 系統字)</option>
+          <option value="DFKai-SB">標楷體 (DFKai-SB)</option>
+          <option value="Arial">Arial</option>
+        </select>
+      </div>
+    </div>
   </div>
   <div class="toolbar">
     <label>播放速度
@@ -330,7 +361,7 @@ const marginLRVal = document.getElementById("marginLRVal");
 const spacingVal = document.getElementById("spacingVal");
 const fontSizeVal = document.getElementById("fontSizeVal");
 const outlineVal = document.getElementById("outlineVal");
-let style = { MarginV: 60, MarginL: 120, MarginR: 120, Spacing: 2, Fontsize: 70, Outline: 4 };
+let style = { MarginV: 60, MarginL: 120, MarginR: 120, Spacing: 2, Fontsize: 70, Outline: 4, Fontname: "Noto Sans CJK TC" };
 // PlayRes 假設 1920x1080，跟 config.py 一致
 const PLAY_RES_Y = 1080;
 const PLAY_RES_X = 1920;
@@ -340,6 +371,10 @@ function applyStyleToUI() {
   spacingInput.value = style.Spacing;
   fontSizeInput.value = style.Fontsize;
   outlineInput.value = style.Outline;
+  const fontNameInput = document.getElementById("fontName");
+  if (fontNameInput && style.Fontname) {
+    fontNameInput.value = style.Fontname;
+  }
   marginVVal.textContent = style.MarginV;
   spacingVal.textContent = style.Spacing;
   fontSizeVal.textContent = style.Fontsize;
@@ -355,9 +390,13 @@ function renderBox() {
   const widthPx = stageW - ((style.MarginL + style.MarginR) / PLAY_RES_X) * stageW;
   const finalWidthPx = Math.max(60, widthPx);
   box.style.width = finalWidthPx + "px";
-  textEl.style.letterSpacing = style.Spacing + "px";
+  const spacingPx = (style.Spacing / PLAY_RES_Y) * stageH;
+  textEl.style.letterSpacing = spacingPx + "px";
   const fontPx = (style.Fontsize / PLAY_RES_Y) * stageH;
   textEl.style.fontSize = Math.max(10, fontPx) + "px";
+  if (style.Fontname) {
+    textEl.style.fontFamily = `"${style.Fontname}", sans-serif`;
+  }
   // 黑框粗細跟字體大小用同一個縮放比例（都是以 1920x1080 為基準的 ASS 單位）
   const outlinePx = (style.Outline / PLAY_RES_Y) * stageH;
   textEl.style.webkitTextStroke = Math.max(0, outlinePx) + "px #000";
@@ -428,6 +467,14 @@ marginLRInput.addEventListener("input", () => {
 spacingInput.addEventListener("input", () => { style.Spacing = Number(spacingInput.value); applyStyleToUI(); markDirty(); });
 fontSizeInput.addEventListener("input", () => { style.Fontsize = Number(fontSizeInput.value); applyStyleToUI(); markDirty(); });
 outlineInput.addEventListener("input", () => { style.Outline = Number(outlineInput.value); applyStyleToUI(); markDirty(); });
+const fontNameInput = document.getElementById("fontName");
+if (fontNameInput) {
+  fontNameInput.addEventListener("change", () => {
+    style.Fontname = fontNameInput.value;
+    applyStyleToUI();
+    markDirty();
+  });
+}
 window.addEventListener("resize", renderBox);
 
 // ---------- 復原（分句/合併/剪除選取片段）----------
@@ -1082,6 +1129,7 @@ function keyEventToString(e) {
 }
 
 document.addEventListener("keydown", (e) => {
+  if (e.isComposing || e.keyCode === 229) return; // 避免輸入法選字確認（按 Enter）時誤觸快捷鍵跳到下一行
   const combo = keyEventToString(e);
   if (!combo) return;
   const inTextarea = e.target.tagName === "TEXTAREA";
