@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>影片後製儀表板</title>
+<link rel="icon" type="image/x-icon" href="/app.ico">
 <style>
   :root {
     --bg:#f5f4f1; --card:#fff; --text:#2a2620; --soft:#6b6459; --border:#e4e0d8;
@@ -115,109 +116,76 @@
 
   .brand-box {
     background:var(--card); border:1px solid var(--border); border-radius:12px;
-    padding:16px 22px; margin-bottom:22px;
+    padding:18px 22px; margin-bottom:22px;
   }
-  .brand-box-title { font-size:0.9rem; font-weight:600; margin-bottom:10px; }
+  .brand-box-title { font-size:0.95rem; font-weight:600; margin-bottom:12px; }
   .brand-row {
-    display:flex; align-items:center; gap:10px; padding:6px 0; font-size:0.85rem;
-    border-bottom:1px solid var(--border);
+    display:flex; align-items:center; gap:12px; padding:8px 0; font-size:0.85rem;
+    border-bottom:1px solid var(--border); flex-wrap:wrap;
   }
   .brand-row:last-child { border-bottom:none; }
-  .brand-row .brand-name { font-weight:600; min-width:140px; }
+  .brand-row .brand-name { font-weight:600; min-width:130px; }
   .brand-row .brand-status { color:var(--soft); }
-  .brand-row .brand-status.done { color:var(--ok); }
+  .brand-row .brand-status.done { color:var(--ok); font-weight:500; }
+  .brand-row .brand-actions { margin-left:auto; display:flex; gap:6px; }
+  .brand-btn-sm {
+    padding:4px 10px; font-size:0.75rem; border-radius:6px; border:1px solid var(--border);
+    background:var(--card); cursor:pointer; color:var(--text);
+  }
+  .brand-btn-sm:hover { background:var(--pending-bg); }
+  .brand-btn-del { color:var(--err); }
+  .brand-btn-del:hover { background:var(--err); color:#fff; border-color:var(--err); }
+
+  .brand-ctrl-row {
+    display:flex; align-items:center; gap:8px; margin:12px 0 10px; flex-wrap:wrap; font-size:0.85rem;
+  }
+  .brand-ctrl-row label { font-weight:600; color:var(--text); }
+  .brand-ctrl-row input[type=text] {
+    padding:6px 10px; border-radius:6px; border:1px solid var(--border); font-size:0.85rem; width:180px;
+  }
+  .brand-hint { font-size:0.78rem; color:var(--soft); }
+
+  .brand-upload-section {
+    background:var(--pending-bg); border-radius:8px; padding:12px 16px; margin:10px 0;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .brand-upload-row {
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:0.85rem;
+  }
+  .brand-field-label { min-width:80px; font-weight:600; color:var(--text); }
+  .brand-upload-row input[type=file] { font-size:0.82rem; flex:1; min-width:220px; }
+  .brand-upload-btn {
+    padding:6px 14px; font-size:0.82rem; background:var(--accent); color:#fff; border:none;
+    border-radius:6px; cursor:pointer; font-weight:500;
+  }
+  .brand-upload-btn:hover { background:#1a5fd0; }
+  .brand-upload-btn:disabled { opacity:0.5; cursor:wait; }
+
+  .brand-upload-progress-wrap {
+    width:100%; height:8px; background:#ded9ce; border-radius:999px; overflow:hidden; display:none; margin-top:4px;
+  }
+  .brand-upload-progress-bar { height:100%; width:0%; background:var(--accent); transition:width 0.15s; }
+
+  .brand-path-details {
+    margin-top:10px; font-size:0.82rem; color:var(--soft);
+  }
+  .brand-path-details summary { cursor:pointer; padding:4px 0; user-select:none; font-weight:500; }
+  .brand-path-details .brand-import-row { margin-top:8px; }
+
   .brand-import-row {
-    display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; font-size:0.85rem;
+    display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; font-size:0.85rem;
   }
   .brand-import-row input[type=text] {
     padding:6px 10px; border-radius:6px; border:1px solid var(--border); font-size:0.85rem;
   }
-  #brandNameInput { width:160px; }
   .brand-import-row input[id$="Path"] { flex:1; min-width:220px; }
-  .brand-import-msg { font-size:0.8rem; color:var(--soft); margin-top:6px; min-height:1.2em; }
-  .brand-import-msg.err { color:var(--err); }
-
-  /* 圖片放大燈箱 CSS */
-  .img-modal {
-    display: none;
-    position: fixed;
-    z-index: 1000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background-color: rgba(0, 0, 0, 0.95);
-    align-items: center;
-    justify-content: center;
+  .brand-import-btn {
+    padding:6px 12px; font-size:0.82rem; background:var(--card); border:1px solid var(--border);
+    border-radius:6px; cursor:pointer;
   }
-  .img-modal-content-wrap {
-    position: relative;
-    max-width: 95%;
-    max-height: 95%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .img-modal-content {
-    max-width: 100%;
-    max-height: 80vh;
-    border-radius: 6px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
-    cursor: grab;
-    transition: transform 0.15s ease;
-    user-select: none;
-    -webkit-user-drag: none;
-  }
-  .img-modal-content:active {
-    cursor: grabbing;
-  }
-  .img-modal-close {
-    position: absolute;
-    top: -50px;
-    right: 0px;
-    color: #f1f1f1;
-    font-size: 38px;
-    font-weight: bold;
-    cursor: pointer;
-    background: none;
-    border: none;
-  }
-  .img-modal-close:hover {
-    color: #bbb;
-  }
-  .img-modal-controls {
-    display: flex;
-    gap: 15px;
-    margin-top: 15px;
-    background: rgba(30, 30, 30, 0.9);
-    padding: 8px 20px;
-    border-radius: 30px;
-    border: 1px solid rgba(255,255,255,0.15);
-    align-items: center;
-  }
-  .img-modal-btn {
-    background: #3a382f;
-    color: #eee;
-    border: 1px solid #5a584f;
-    padding: 6px 16px;
-    border-radius: 20px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 600;
-    transition: background 0.15s, border-color 0.15s;
-  }
-  .img-modal-btn:hover {
-    background: #4e4b40;
-    border-color: #7a786f;
-  }
-  .img-modal-zoom-info {
-    color: #ccc;
-    font-size: 0.85rem;
-    font-weight: 600;
-    min-width: 60px;
-    text-align: center;
-  }
+  .brand-import-btn:hover { background:#eae6dc; }
+  .brand-import-msg { font-size:0.82rem; color:var(--soft); margin-top:8px; min-height:1.2em; }
+  .brand-import-msg.err { color:var(--err); font-weight:500; }
 </style>
 </head>
 <body>
@@ -234,20 +202,46 @@
   </div>
 
   <div class="brand-box">
-    <div class="brand-box-title">🎬 片頭片尾版本管理（不同系列/講師可以各自上傳一套）</div>
+    <div class="brand-box-title">🎬 片頭片尾版本管理（支援直接上傳或本機路徑匯入）</div>
     <div id="brandList"></div>
-    <div class="brand-import-row">
-      <input type="text" id="brandNameInput" placeholder="品牌／系列名稱（例如 侯老師）">
-      <span>片頭路徑</span>
-      <input type="text" id="brandIntroPath" placeholder="影片檔案完整路徑，例如 C:\...\intro.mp4（不是資料夾）">
-      <button data-import-kind="intro" class="brand-import-btn">匯入片頭</button>
+
+    <div class="brand-ctrl-row">
+      <label for="brandNameInput">目標品牌／系列：</label>
+      <input type="text" id="brandNameInput" list="brandDatalist" placeholder="例如 default 或 侯老師" value="default">
+      <datalist id="brandDatalist"></datalist>
+      <span class="brand-hint">（留空預設為 default；也可點選上方既有品牌的「選取」按鈕快速帶入）</span>
     </div>
-    <div class="brand-import-row">
-      <span style="min-width:0;"></span>
-      <span>片尾路徑</span>
-      <input type="text" id="brandOutroPath" placeholder="影片檔案完整路徑，例如 C:\...\outro.mp4（不是資料夾）">
-      <button data-import-kind="outro" class="brand-import-btn">匯入片尾</button>
+
+    <div class="brand-upload-section">
+      <div class="brand-upload-row">
+        <span class="brand-field-label">片頭影片：</span>
+        <input type="file" id="brandIntroFile" accept=".mp4,.mov,.mkv,.avi,.m4v">
+        <button id="uploadIntroBtn" class="brand-upload-btn">⬆ 上傳片頭</button>
+      </div>
+      <div class="brand-upload-row">
+        <span class="brand-field-label">片尾影片：</span>
+        <input type="file" id="brandOutroFile" accept=".mp4,.mov,.mkv,.avi,.m4v">
+        <button id="uploadOutroBtn" class="brand-upload-btn">⬆ 上傳片尾</button>
+      </div>
+      <div class="brand-upload-progress-wrap" id="brandProgressWrap">
+        <div class="brand-upload-progress-bar" id="brandProgressBar"></div>
+      </div>
     </div>
+
+    <details class="brand-path-details">
+      <summary>進階：從本機檔案完整路徑匯入（不需透過瀏覽器上傳）</summary>
+      <div class="brand-import-row">
+        <span>片頭路徑</span>
+        <input type="text" id="brandIntroPath" placeholder="影片檔案完整路徑，例如 C:\...\intro.mp4（不是資料夾）">
+        <button data-import-kind="intro" class="brand-import-btn">匯入片頭</button>
+      </div>
+      <div class="brand-import-row">
+        <span>片尾路徑</span>
+        <input type="text" id="brandOutroPath" placeholder="影片檔案完整路徑，例如 C:\...\outro.mp4（不是資料夾）">
+        <button data-import-kind="outro" class="brand-import-btn">匯入片尾</button>
+      </div>
+    </details>
+
     <div class="brand-import-msg" id="brandImportMsg"></div>
   </div>
 
@@ -263,23 +257,9 @@
   </div>
 </div>
 
-<!-- 圖片放大燈箱 HTML -->
-<div id="imgModal" class="img-modal" style="display: none;">
-  <div class="img-modal-content-wrap">
-    <button class="img-modal-close" onclick="closeImgModal()">&times;</button>
-    <img class="img-modal-content" id="imgModalImg" src="" alt="放大預覽圖">
-    <div class="img-modal-controls">
-      <button class="img-modal-btn" onclick="zoomImg(0.2)">🔍 放大</button>
-      <button class="img-modal-btn" onclick="zoomImg(-0.2)">🔍 縮小</button>
-      <span class="img-modal-zoom-info" id="imgModalZoomVal">100%</span>
-      <button class="img-modal-btn" onclick="resetZoomImg()">⟲ 重設</button>
-      <button class="img-modal-btn" onclick="closeImgModal()" style="background:#5a2b22; border-color:#80352a;">✕ 關閉</button>
-    </div>
-  </div>
-</div>
-
 <script>
 const STAGE_LABELS = {
+  privacy_cleaned: "隱私清理已套用",
   transcribed: "轉錄",
   caption_reviewed: "字幕已編輯（校對／位置）",
   captioned: "字幕已匹配",
@@ -292,6 +272,7 @@ const STAGE_LABELS = {
 
 // 進度訊息用的階段動詞，取代籠統的「執行中…/完成」，讓使用者看得出目前在做哪一件事。
 const STAGE_VERBS = {
+  privacy_clean: "隱私清理",
   transcribe: "轉錄",
   filler_detect: "偵測贅詞",
   jumpcut: "跳剪",
@@ -405,36 +386,173 @@ async function loadTranslateLangs() {
 
 let BRANDS = [];
 
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return "";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return ` (${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]})`;
+}
+
 async function loadBrands() {
   const res = await fetch("/api/brands");
   BRANDS = await res.json();
   renderBrandList();
+  if (selectedEpisode) {
+    const ep = EPISODES.find(e => e.episode === selectedEpisode);
+    if (ep) renderDetail(ep);
+  }
+}
+
+function selectBrand(name) {
+  const input = document.getElementById("brandNameInput");
+  if (input) input.value = name;
+  const msgEl = document.getElementById("brandImportMsg");
+  if (msgEl) {
+    msgEl.className = "brand-import-msg";
+    msgEl.textContent = `已選取品牌「${name}」，可在下方選擇檔案進行上傳或替換`;
+  }
+}
+
+async function deleteBrand(name) {
+  const isDefault = name === "default";
+  const promptText = isDefault
+    ? "確定要清空 default 品牌的片頭與片尾素材嗎？"
+    : `確定要刪除品牌「${name}」及其所有片頭/片尾素材嗎？`;
+  if (!confirm(promptText)) return;
+
+  const msgEl = document.getElementById("brandImportMsg");
+  msgEl.className = "brand-import-msg";
+  msgEl.textContent = `正在處理「${name}」素材…`;
+
+  try {
+    const res = await fetch("/api/brands/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brand: name }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      msgEl.className = "brand-import-msg";
+      msgEl.textContent = `✓ 已清除「${name}」素材`;
+      loadBrands();
+    } else {
+      msgEl.className = "brand-import-msg err";
+      msgEl.textContent = data.error || "刪除失敗";
+    }
+  } catch (err) {
+    msgEl.className = "brand-import-msg err";
+    msgEl.textContent = "刪除失敗（連線錯誤）";
+  }
 }
 
 function renderBrandList() {
   const list = document.getElementById("brandList");
+  const datalist = document.getElementById("brandDatalist");
+
+  if (datalist) {
+    datalist.innerHTML = BRANDS.map(b => `<option value="${b.name}">`).join("");
+  }
+
   if (BRANDS.length === 0) {
-    list.innerHTML = '<div class="sidebar-empty">還沒有任何品牌，用下面的欄位匯入第一套片頭/片尾。</div>';
+    list.innerHTML = '<div class="sidebar-empty">尚無品牌素材，可在下方選擇影片檔案上傳第一套片頭／片尾。</div>';
     return;
   }
-  list.innerHTML = BRANDS.map(b => `
-    <div class="brand-row">
-      <span class="brand-name">${b.name}</span>
-      <span class="brand-status ${b.has_intro ? "done" : ""}">${b.has_intro ? "✓ 片頭" : "✗ 片頭"}</span>
-      <span class="brand-status ${b.has_outro ? "done" : ""}">${b.has_outro ? "✓ 片尾" : "✗ 片尾"}</span>
-    </div>
-  `).join("");
+
+  list.innerHTML = BRANDS.map(b => {
+    const introTxt = b.has_intro ? `✓ 片頭已就緒${formatFileSize(b.intro_size)}` : "✗ 未上傳片頭";
+    const outroTxt = b.has_outro ? `✓ 片尾已就緒${formatFileSize(b.outro_size)}` : "✗ 未上傳片尾";
+    return `
+      <div class="brand-row">
+        <span class="brand-name">${b.name}</span>
+        <span class="brand-status ${b.has_intro ? "done" : ""}">${introTxt}</span>
+        <span class="brand-status ${b.has_outro ? "done" : ""}">${outroTxt}</span>
+        <div class="brand-actions">
+          <button type="button" class="brand-btn-sm" onclick="selectBrand('${b.name}')">選取</button>
+          <button type="button" class="brand-btn-sm brand-btn-del" onclick="deleteBrand('${b.name}')" title="刪除或清空此品牌素材">🗑 清除</button>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
+
+function uploadBrandAsset(kind) {
+  const brandInput = document.getElementById("brandNameInput");
+  const brand = (brandInput ? brandInput.value.trim() : "") || "default";
+  const fileInput = document.getElementById(kind === "intro" ? "brandIntroFile" : "brandOutroFile");
+  const btn = document.getElementById(kind === "intro" ? "uploadIntroBtn" : "uploadOutroBtn");
+  const msgEl = document.getElementById("brandImportMsg");
+  const progressWrap = document.getElementById("brandProgressWrap");
+  const progressBar = document.getElementById("brandProgressBar");
+
+  const kindLabel = kind === "intro" ? "片頭" : "片尾";
+
+  if (!fileInput.files || fileInput.files.length === 0) {
+    msgEl.className = "brand-import-msg err";
+    msgEl.textContent = `請先點選「選擇檔案」挑選${kindLabel}影片檔`;
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", `/api/brands/upload?brand=${encodeURIComponent(brand)}&kind=${kind}&filename=${encodeURIComponent(file.name)}`);
+  xhr.overrideMimeType("application/octet-stream");
+
+  progressWrap.style.display = "block";
+  progressBar.style.width = "0%";
+  msgEl.className = "brand-import-msg";
+  msgEl.textContent = `正在上傳「${brand}」的${kindLabel}影片（${file.name}）…`;
+  if (btn) btn.disabled = true;
+
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      progressBar.style.width = Math.round((e.loaded / e.total) * 100) + "%";
+    }
+  };
+
+  xhr.onload = () => {
+    if (btn) btn.disabled = false;
+    progressWrap.style.display = "none";
+    if (xhr.status === 200) {
+      msgEl.className = "brand-import-msg";
+      msgEl.textContent = `✓ 已成功上傳「${brand}」的${kindLabel}影片（${file.name}）！`;
+      fileInput.value = "";
+      loadBrands();
+    } else {
+      let errMsg = "上傳失敗";
+      try {
+        const data = JSON.parse(xhr.responseText);
+        errMsg = data.error || errMsg;
+      } catch (err) {
+        errMsg += ": " + xhr.responseText;
+      }
+      msgEl.className = "brand-import-msg err";
+      msgEl.textContent = errMsg;
+    }
+  };
+
+  xhr.onerror = () => {
+    if (btn) btn.disabled = false;
+    progressWrap.style.display = "none";
+    msgEl.className = "brand-import-msg err";
+    msgEl.textContent = "上傳失敗（連線錯誤）";
+  };
+
+  xhr.send(file);
+}
+
+document.getElementById("uploadIntroBtn").addEventListener("click", () => uploadBrandAsset("intro"));
+document.getElementById("uploadOutroBtn").addEventListener("click", () => uploadBrandAsset("outro"));
 
 async function importBrandAsset(kind) {
   const msgEl = document.getElementById("brandImportMsg");
-  const brand = document.getElementById("brandNameInput").value.trim();
+  const brand = (document.getElementById("brandNameInput").value.trim()) || "default";
   const pathInput = document.getElementById(kind === "intro" ? "brandIntroPath" : "brandOutroPath");
   const sourcePath = pathInput.value.trim();
 
-  if (!brand || !sourcePath) {
+  if (!sourcePath) {
     msgEl.className = "brand-import-msg err";
-    msgEl.textContent = "品牌名稱跟路徑都要填";
+    msgEl.textContent = "請輸入本機影片檔案完整路徑";
     return;
   }
 
@@ -452,7 +570,7 @@ async function importBrandAsset(kind) {
     return;
   }
   msgEl.className = "brand-import-msg";
-  msgEl.textContent = `已匯入「${brand}」的${kind === "intro" ? "片頭" : "片尾"}`;
+  msgEl.textContent = `✓ 已匯入「${brand}」的${kind === "intro" ? "片頭" : "片尾"}`;
   pathInput.value = "";
   loadBrands();
 }
@@ -510,24 +628,37 @@ function renderDetail(ep) {
       <h2>${ep.episode}　<span style="font-weight:400;font-size:0.8rem;color:var(--soft)">${ep.video}</span></h2>
     </div>
     <div class="badges">${badges}</div>
+    <div class="privacy-clean-box" style="margin-bottom:8px;">
+      <span style="font-size:0.85rem;color:var(--soft);">隱私清理（選用，螢幕錄影去識別化，跑在①之前）— 裁掉幾邊像素：</span>
+      <label>上 <input type="number" min="0" value="0" data-crop="top" style="width:60px"></label>
+      <label>下 <input type="number" min="0" value="0" data-crop="bottom" style="width:60px"></label>
+      <label>左 <input type="number" min="0" value="0" data-crop="left" style="width:60px"></label>
+      <label>右 <input type="number" min="0" value="0" data-crop="right" style="width:60px"></label>
+      <button data-action="privacy_clean" class="${ep.privacy_cleaned ? "done" : ""}">🔒 套用隱私清理</button>
+    </div>
     <div class="actions">
       <button data-action="transcribe" class="${ep.transcribed ? "done" : ""}">① 開始轉錄</button>
       <button data-action="caption_studio" class="${ep.captioned ? "done" : ""}">② 編輯字幕（校對／位置／套用）</button>
       <button data-action="filler_detect" class="${ep.filler_detected ? "done" : ""}">③ 偵測贅詞</button>
       <button data-action="jumpcut" class="${ep.jumpcut ? "done" : ""}">④ 套用跳剪</button>
       ${BRANDS.length > 0
-        ? `<select data-brand-select title="選要套用哪一套片頭/片尾版本">${BRANDS.map(b => `<option value="${b.name}">${b.name}</option>`).join("")}</select>
+        ? `<select data-brand-select title="選要套用哪一套片頭/片尾版本">${BRANDS.map(b => {
+            let status = "";
+            if (b.has_intro && b.has_outro) status = "（片頭+片尾）";
+            else if (b.has_intro) status = "（僅片頭）";
+            else if (b.has_outro) status = "（僅片尾）";
+            else status = "（未上傳素材）";
+            return `<option value="${b.name}">${b.name} ${status}</option>`;
+          }).join("")}</select>
            <select data-transition-select title="選擇轉場效果">
-             <option value="slideup_fade" selected>片頭推 + 片尾淡出變黑 (過渡黑場，推薦)</option>
-             <option value="slideup_dissolve">片頭推 + 片尾平滑疊化 (無黑場)</option>
-             <option value="slideup_slideup">片頭推 + 片尾推 (無黑場)</option>
-             <option value="dissolve">全部平滑疊化 (無黑場)</option>
-             <option value="slideup">全部向上移開 (無黑場)</option>
-             <option value="fadeblack">全部淡出變黑 (過渡黑場)</option>
-             <option value="none">無轉場 (直接接續)</option>
+             <option value="pushup_fadeblack" selected>片頭推擠往上（伏地挺身）+ 片尾褪黑（推薦）</option>
+             <option value="fadeblack">全部褪黑過渡（過渡黑場）</option>
+             <option value="dissolve">全部平滑疊化（無黑場）</option>
+             <option value="slideup">全部推擠往上（無黑場）</option>
+             <option value="none">無轉場（直接接續）</option>
            </select>`
         : ""}
-      <button data-action="bumper" class="${ep.final ? "done" : ""}" ${BRANDS.length === 0 ? "disabled title=\"尚無品牌，先在上方匯入片頭/片尾\"" : ""}>⑤ 套用片頭尾</button>
+      <button data-action="bumper" class="${ep.final ? "done" : ""}" ${BRANDS.filter(b => b.has_intro || b.has_outro).length === 0 ? "disabled title=\"尚無可用品牌素材，請先在上方上傳片頭或片尾\"" : ""}>⑤ 套用片頭尾</button>
       <button data-action="qa" class="${ep.qa_done ? "done" : ""}">⑥ 品質檢查</button>
       ${TRANSLATE_LANGS.map(lang => `<button data-action="translate" data-lang="${lang}" class="${ep.translated_langs.includes(lang) ? "done" : ""}">⑦ 翻譯（${lang}）</button>`).join("")}
     </div>
@@ -537,15 +668,35 @@ function renderDetail(ep) {
     <div class="outputs-container">${renderOutputs(ep)}</div>
   `;
 
+  div.querySelector('[data-action="privacy_clean"]').onclick = () => {
+    const box = div.querySelector(".privacy-clean-box");
+    const px = side => box.querySelector(`[data-crop="${side}"]`).value || 0;
+    const query = `&crop_top=${px("top")}&crop_bottom=${px("bottom")}&crop_left=${px("left")}&crop_right=${px("right")}`;
+    if (["top", "bottom", "left", "right"].every(side => Number(px(side)) === 0)) {
+      alert("至少要設定一邊要裁掉的像素數才能套用隱私清理");
+      return;
+    }
+    runStage(ep.episode, "privacy_clean", query);
+  };
   div.querySelector('[data-action="transcribe"]').onclick = () => runStage(ep.episode, "transcribe");
   div.querySelector('[data-action="caption_studio"]').onclick = () =>
     window.open(`/caption_studio.html?episode=${encodeURIComponent(ep.episode)}&video=input/${encodeURIComponent(ep.video)}`, "_blank");
   div.querySelector('[data-action="filler_detect"]').onclick = () => runStage(ep.episode, "filler_detect");
   div.querySelector('[data-action="jumpcut"]').onclick = () => runStage(ep.episode, "jumpcut");
   div.querySelector('[data-action="bumper"]').onclick = () => {
-    // 按鈕在 BRANDS 為空時是 disabled 狀態，能點到這裡就代表 brandSelect 一定存在。
-    const brand = div.querySelector('[data-brand-select]').value;
-    const transition = div.querySelector('[data-transition-select]').value;
+    const select = div.querySelector('[data-brand-select]');
+    if (!select) {
+      alert("尚未建立品牌，請先在上方上傳片頭或片尾素材");
+      return;
+    }
+    const brand = select.value;
+    const b = BRANDS.find(item => item.name === brand);
+    if (b && !b.has_intro && !b.has_outro) {
+      alert(`品牌「${brand}」尚未上傳片頭或片尾，請先在上方選擇檔案上傳`);
+      return;
+    }
+    const transitionSelect = div.querySelector('[data-transition-select]');
+    const transition = transitionSelect ? transitionSelect.value : "pushup_fadeblack";
     runStage(ep.episode, "bumper", `&brand=${encodeURIComponent(brand)}&transition=${encodeURIComponent(transition)}`);
   };
   div.querySelector('[data-action="qa"]').onclick = () => runStage(ep.episode, "qa");
@@ -578,34 +729,17 @@ const OUTPUT_VERSIONS = [
 ];
 
 function renderOutputs(ep) {
-  let rows = [];
-  OUTPUT_VERSIONS.forEach(v => {
-    if (ep[v.key]) {
-      const file = `${ep.episode}_${v.suffix}.mp4`;
-      const highlight = v.key === "final" ? "output-row final" : "output-row";
-      rows.push(`
-        <div class="${highlight}">
-          <span class="output-label">${v.label} (最新版)</span>
-          <span class="output-desc">${v.desc}</span>
-          <a href="/output/${file}" target="_blank">▶ 播放</a>
-          <a href="/output/${file}" download="${file}">⬇ 下載</a>
-        </div>`);
-
-      // 歷史版本
-      const vers = (ep.versions && ep.versions[v.key]) || [];
-      vers.forEach(num => {
-        const verFile = `${ep.episode}_${v.suffix}_v${num}.mp4`;
-        rows.push(`
-          <div class="output-row" style="opacity:0.75; font-size:0.9rem; border-left:3px solid var(--soft); padding-left: 10px;">
-            <span class="output-label" style="font-weight:normal; color:#aaa;">├─ 歷史版 v${num}</span>
-            <span class="output-desc" style="color:#888;">產生新版本之前的備份存檔</span>
-            <a href="/output/${verFile}" target="_blank">▶ 播放</a>
-            <a href="/output/${verFile}" download="${verFile}">⬇ 下載</a>
-          </div>`);
-      });
-    }
+  const rows = OUTPUT_VERSIONS.filter(v => ep[v.key]).map(v => {
+    const file = `${ep.episode}_${v.suffix}.mp4`;
+    const highlight = v.key === "final" ? "output-row final" : "output-row";
+    return `
+      <div class="${highlight}">
+        <span class="output-label">${v.label}</span>
+        <span class="output-desc">${v.desc}</span>
+        <a href="/output/${file}" target="_blank">▶ 播放</a>
+        <a href="/output/${file}" download="${file}">⬇ 下載</a>
+      </div>`;
   });
-
   const srtRows = (ep.translated_langs || []).map(lang => {
     const file = `${ep.episode}_${lang}.srt`;
     return `
@@ -615,7 +749,6 @@ function renderOutputs(ep) {
         <a href="/output/${file}" download="${file}">⬇ 下載</a>
       </div>`;
   });
-
   const allRows = rows.concat(srtRows);
   if (allRows.length === 0) return "";
   return `<div class="outputs-block"><div class="outputs-title">產出檔案：</div>${allRows.join("")}</div>`;
@@ -834,96 +967,55 @@ async function loadQaReport(div, episode) {
     </div>
   ` : "";
 
+  const deadAirGaps = data.dead_air_gaps || [];
+  const deadAirHtml = deadAirGaps.length ? `
+    <div style="margin-top:8px;">漏剪停頓（已剪過但還留著的長靜音，僅供輔助人工複查）：</div>
+    ${deadAirGaps.map(g => `
+      <div class="flagged-item">
+        <span class="idx-label">${g.start.toFixed(1)}s–${g.end.toFixed(1)}s</span>
+        <span class="txt">安靜 ${g.duration.toFixed(1)} 秒</span>
+      </div>
+    `).join("")}
+  ` : `<div style="margin-top:8px;color:var(--soft);">沒有偵測到漏剪的長停頓。</div>`;
+
+  const loudness = data.loudness;
+  const loudnessHtml = loudness && loudness.measured ? `
+    <div class="flagged-item" style="${loudness.true_peak_warning ? "border-left-color:var(--err);" : ""}">
+      <span class="txt">${loudness.true_peak_warning ? "⚠ " : ""}響度：Integrated ${loudness.integrated_lufs} LUFS，
+      True Peak ${loudness.true_peak_dbtp} dBTP${loudness.true_peak_warning
+        ? `（超過安全上限 ${loudness.true_peak_limit} dBTP，部分播放裝置可能爆音削波）`
+        : "（未超過安全上限）"}。</span>
+    </div>
+  ` : `<div style="color:var(--soft);">響度量測失敗，略過。</div>`;
+
+  const flashEvents = data.flash_events;
+  const flashHtml = flashEvents === null ? "" : (flashEvents.length ? `
+    <div style="margin-top:8px;">閃爍/亮度驟變（僅供輔助人工複查，螢幕錄影常見的正常畫面切換也可能觸發）：</div>
+    ${flashEvents.map(f => `
+      <div class="flagged-item">
+        <span class="idx-label">${f.time.toFixed(1)}s</span>
+        <span class="txt">亮度變化 ${f.luma_delta}</span>
+      </div>
+    `).join("")}
+  ` : `<div style="margin-top:8px;color:var(--soft);">沒有偵測到明顯閃爍。</div>`);
+
   area.innerHTML = `
     <div class="flagged-list">
       <div>
         品質檢查結果（來源：${data.source_stage || "?"}，抽幀 ${data.contact_sheet_frames || "?"} 張／
         ${data.contact_sheet_grid || "?"} 網格）：
-        <a href="${sheetUrl}" target="_blank" onclick="openImgModal('${sheetUrl}'); return false;">開啟抽幀總覽圖 ↗ (點擊直接放大預覽)</a>
+        <a href="${sheetUrl}" target="_blank">開啟抽幀總覽圖 ↗</a>
       </div>
       ${aspectWarningHtml}
       ${data.caption_sync_dropped_events ? `<div class="flagged-item"><span class="txt">ℹ 有 ${data.caption_sync_dropped_events} 句字幕落在跳剪剪掉的區間，這次比對已略過。</span></div>` : ""}
       ${suspects.length
         ? `<div style="margin-top:8px;">可疑字幕（字幕時間與靜音區間重疊超過門檻，僅供輔助人工複查，不是絕對判定）：</div>${suspectItems}`
         : `<div style="margin-top:8px;color:var(--soft);">沒有偵測到可疑字幕（安靜偵測本身可能有誤差，不代表 100% 對準，仍建議打開抽幀總覽圖看一眼）。</div>`}
+      ${deadAirHtml}
+      ${loudnessHtml}
+      ${flashHtml}
     </div>
   `;
-}
-
-// ---------- 圖片放大燈箱 JS ----------
-let currentZoom = 1.0;
-let isDraggingImg = false;
-let startX = 0, startY = 0;
-let scrollLeft = 0, scrollTop = 0;
-
-function openImgModal(src) {
-  const modal = document.getElementById("imgModal");
-  const modalImg = document.getElementById("imgModalImg");
-  modalImg.src = src;
-  modal.style.display = "flex";
-  resetZoomImg();
-  document.body.style.overflow = "hidden"; // 避免底層背景滾動
-}
-
-function closeImgModal() {
-  document.getElementById("imgModal").style.display = "none";
-  document.body.style.overflow = "";
-}
-
-function zoomImg(delta) {
-  const modalImg = document.getElementById("imgModalImg");
-  currentZoom = Math.max(0.4, Math.min(4.0, currentZoom + delta));
-  modalImg.style.transform = `scale(${currentZoom})`;
-  document.getElementById("imgModalZoomVal").textContent = `${Math.round(currentZoom * 100)}%`;
-}
-
-function resetZoomImg() {
-  const modalImg = document.getElementById("imgModalImg");
-  currentZoom = 1.0;
-  modalImg.style.transform = "scale(1)";
-  modalImg.style.left = "0px";
-  modalImg.style.top = "0px";
-  modalImg.style.position = "relative";
-  document.getElementById("imgModalZoomVal").textContent = "100%";
-}
-
-// 監聽拖曳移動圖片 (平移)
-const modalImgEl = document.getElementById("imgModalImg");
-const modalWrapEl = document.getElementById("imgModal");
-
-if (modalImgEl) {
-  modalImgEl.addEventListener("mousedown", (e) => {
-    isDraggingImg = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    const styleLeft = parseInt(modalImgEl.style.left) || 0;
-    const styleTop = parseInt(modalImgEl.style.top) || 0;
-    scrollLeft = styleLeft;
-    scrollTop = styleTop;
-    modalImgEl.style.position = "relative";
-    e.preventDefault();
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (!isDraggingImg) return;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-    modalImgEl.style.left = (scrollLeft + dx) + "px";
-    modalImgEl.style.top = (scrollTop + dy) + "px";
-  });
-
-  window.addEventListener("mouseup", () => {
-    isDraggingImg = false;
-  });
-
-  // 點選背景關閉燈箱
-  if (modalWrapEl) {
-    modalWrapEl.addEventListener("click", (e) => {
-      if (e.target === modalWrapEl) {
-        closeImgModal();
-      }
-    });
-  }
 }
 
 // 從字幕編輯頁點「是，套用跳剪」跳轉過來時帶 ?episode=X&autorun=jumpcut，

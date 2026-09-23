@@ -32,7 +32,12 @@ def save_bumper_offset(work_dir, intro_duration):
     )
 
 
-def _load_bumper_offset(work_dir):
+def load_bumper_offset(work_dir):
+    """讀回 save_bumper_offset() 存的片頭秒數，沒存過（還沒套過片頭）回 0.0。
+
+    公開函式（原本是 remap_events() 內部私用，2026-09-10 因 stage_qa 的漏剪停頓
+    檢查也需要片頭秒數才第二個呼叫端出現，改成公開，不重複寫一份讀檔邏輯）。
+    """
     path = work_dir / "bumper_offset.json"
     if not path.exists():
         return 0.0
@@ -67,7 +72,7 @@ def remap_events(events, source_stage, work_dir):
         return events, 0
 
     keep_ranges = _load_jumpcut_map(work_dir)
-    offset = _load_bumper_offset(work_dir) if source_stage == "final" else 0.0
+    offset = load_bumper_offset(work_dir) if source_stage == "final" else 0.0
 
     if keep_ranges is None:
         # 沒有 jumpcut_map.json：這集根本沒真的跑過跳剪（例如 jumpcut.mp4 是直接

@@ -8,16 +8,9 @@
 
 import difflib
 import json
-import re
 from pathlib import Path
 
 GLOSSARY_PATH = Path(__file__).resolve().parent.parent / "corrections_glossary.json"
-
-_CONTAINS_DIGITS_OR_PUNCT_RE = re.compile(
-    r"[\d\s\W\._、，。！？；：,!\?\-\+\=\*\/\(\)\[\]\{\}\<\>]", re.UNICODE
-)
-
-_COMMON_STOP_CHARS = set("的的了是在就會這那個一我你他成與和及也都要能改被把讓用給由各條個圖來助即")
 
 
 def load_glossary():
@@ -32,57 +25,16 @@ def _save_glossary(glossary):
     )
 
 
-def _is_valid_term_pair(wrong, right):
-    """檢查是否為合法的專有名詞/詞彙修正對。
-
-    防範單字元替換（如「一」→「1」、「3」→「會」）、標點、數字或整句重寫造成的全域亂套用。
-    """
-    if not wrong or not right:
-        return False
-    wrong = wrong.strip()
-    right = right.strip()
-    if wrong == right:
-        return False
-
-    # 長度必須在 2 到 8 個字之間（避免單字元誤換，也避免長句重寫）
-    if len(wrong) < 2 or len(right) < 2:
-        return False
-    if len(wrong) > 8 or len(right) > 8:
-        return False
-
-    # 不能包含數字、標點符號或空白
-    if _CONTAINS_DIGITS_OR_PUNCT_RE.search(wrong) or _CONTAINS_DIGITS_OR_PUNCT_RE.search(right):
-        return False
-
-    is_wrong_ascii = wrong.isalnum() and wrong.isascii()
-    is_right_ascii = right.isalnum() and right.isascii()
-
-    if is_wrong_ascii or is_right_ascii:
-        # 包含英文/縮寫的專有名詞對（如 ISO -> Excel）
-        if not wrong.isalnum() or not right.isalnum():
-            return False
-        return True
-
-    # 中文對中文的錯別字/同音字/專有名詞修正：音節數與字數必須相等，且不能全由虛詞組成
-    if len(wrong) != len(right):
-        return False
-    if all(c in _COMMON_STOP_CHARS for c in wrong) or all(c in _COMMON_STOP_CHARS for c in right):
-        return False
-
-    return True
-
-
-
 def extract_diffs(original, corrected):
-    """比對兩行文字，抓出實際被替換掉的片段，忽略沒變的部分與單字元/標點雜訊。"""
+    """比對兩行文字，抓出實際被替換掉的片段，忽略沒變的部分。"""
     sm = difflib.SequenceMatcher(None, original, corrected)
     diffs = []
     for tag, i1, i2, j1, j2 in sm.get_opcodes():
         if tag == "replace":
             wrong = original[i1:i2]
             right = corrected[j1:j2]
-            if _is_valid_term_pair(wrong, right):
-                diffs.append((wrong.strip(), right.strip()))
+            if wrong and right and wrong != right:
+                diffs.append((wrong, right))
     return diffs
 
 
@@ -103,21 +55,19 @@ def record_correction(original, corrected):
 
 
 def apply_glossary(text):
-    """把文字裡已知的錯字片段換成校正後的版本。長片段優先比對。
+    """把文字裡已知的錯字片段換成校正後的版本。長片段優先比對，避免短片段先命中蓋掉長片段。
 
-    僅套用合法的多字元專有名詞修正，排除歷史單字元與標點雜訊。
+    只用於「已經斷好句、單行文字」的場合（例如校對頁面顯示個別調整過的一行）。
+    正式產字幕走的是 apply_glossary_to_words（見下）——這個逐行版本有已知限制：
+    如果錯字片段跨越了斷句邊界（一行結尾、下一行開頭各占一半），逐行比對永遠湊不出
+    完整片段，修正不會生效。這正是 apply_glossary_to_words 要解決的問題。
     """
     glossary = load_glossary()
     if not glossary:
         return text
-    valid_rules = [
-        (wrong, glossary[wrong]["correct"])
-        for wrong in glossary
-        if _is_valid_term_pair(wrong, glossary[wrong]["correct"])
-    ]
-    for wrong, correct in sorted(valid_rules, key=lambda x: len(x[0]), reverse=True):
+    for wrong in sorted(glossary, key=len, reverse=True):
         if wrong in text:
-            text = text.replace(wrong, correct)
+            text = text.replace(wrong, glossary[wrong]["correct"])
     return text
 
 
@@ -165,41 +115,58 @@ def _merge_term(ws, pattern, replacement):
 
 def apply_glossary_to_words(words):
     """詞庫修正的字級（word-level）版本：在 group_words() 斷句「之前」，對整段逐字稿
-    的完整拼接文字做已知錯字替換。
+    的完整拼接文字做已知錯字替換，取代舊版「斷句後對每行文字」的做法。
 
-    僅套用合法的多字元專有名詞修正，防止單字元替換破壞正常轉錄結果。
+    為什麼要搬到這裡（bug 修正核心）：詞庫裡的錯字片段可能橫跨未來的斷句邊界
+    （例如一行結尾是「雲」、下一行開頭是「端」）。斷句後才逐行套用 apply_glossary，
+    兩行分開比對永遠湊不出完整的「雲端」子字串，修正就永遠不會生效。改成在斷句前
+    對整段連續文字做替換，一段完整的多字詞就算未來會被斷句切開也吃得到。
+
+    做法（手法借鏡 video-autopilot-kit word_captions.py 的 apply_fixes_to_words，
+    資料結構是我們自己的 {word,start,end} dict，不是抄它的程式碼）：把整段逐字
+    詞清單拼成一條文字，用長片段優先的 substring 比對找出命中範圍，命中範圍對應
+    到的原始 word dict 們合併成一個新的 word（word=修正後文字、start=範圍內第一個
+    字的 start、end=範圍內最後一個字的 end）。這樣即使修正後文字長度跟原本字數
+    不一樣，這個合併後 word 的時間範圍仍然精確對應原始逐字時間戳涵蓋的區間，
+    後面 group_words 斷句、算行時間時不會跑掉。
+
+    words: [{"word": str, "start": float, "end": float}, ...]（whisper 逐字結果）。
+    回傳：結構相同的新 list（不修改傳入的原始 list/dict）。
     """
     glossary = load_glossary()
     if not glossary:
         return [dict(w) for w in words]
 
-    valid_rules = [
-        (wrong, glossary[wrong]["correct"])
-        for wrong in glossary
-        if _is_valid_term_pair(wrong, glossary[wrong]["correct"])
-    ]
-
     ws = [dict(w) for w in words]
-    for wrong, correct in sorted(valid_rules, key=lambda x: len(x[0]), reverse=True):
+    for wrong in sorted(glossary, key=len, reverse=True):
+        correct = glossary[wrong]["correct"]
         ws = _merge_term(ws, wrong, correct)
     return ws
 
 
 def learned_multichar_terms():
-    """corrections_glossary.json 裡合法的繁體中文/專有名詞複合詞。供斷句保護用。"""
-    glossary = load_glossary()
-    terms = []
-    for k, v in glossary.items():
-        correct = v["correct"]
-        if _is_valid_term_pair(k, correct):
-            terms.append(correct)
-    return terms
+    """corrections_glossary.json 裡長度 >1 的正確詞。供斷句保護用（NEVER_SPLIT_TERMS
+    的動態延伸，見 lib/ass_builder.py 的 _unsplittable_terms 與下面的
+    merge_protected_terms），避免使用者手動在 config.py 重複登記已經校對過的複合詞。
+    單字元修正（例如「藍」→「欄」）不需要保護，一個字不會有「從中間腰斬」的問題。
+    """
+    return [v["correct"] for v in load_glossary().values() if len(v["correct"]) > 1]
 
 
 def merge_protected_terms(words, terms):
     """把 words 裡完整出現的 terms（例如 config.NEVER_SPLIT_TERMS + learned_multichar_terms()）
     合併成單一 token——文字不變，純粹讓這些已知複合詞在 group_words() 眼裡變成不可分割
     的單位。
+
+    為什麼需要這一步：group_words() 逐字掃描時，判斷「這個斷點合不合格」只看得到即將
+    加入的下一個 token；如果一個複合詞被 Whisper 拆成很細碎的單字 token，斷點檢查在
+    腰斬詞的當下可能還沒讀到詞的後半段，就誤判成合格斷點（見 lib/ass_builder.py 開頭
+    的已知限制說明）。跟 apply_glossary_to_words 一樣先把整段話合併好，group_words()
+    看到的就已經是不可分割的單一 token，不用靠斷點檢查臨場判斷夠不夠準。
+
+    呼叫順序建議在 apply_glossary_to_words 之後（見 lib/pipeline.py _base_events）：
+    先修正錯字（產生的複合詞已經是單一 token），再合併其餘已知複合詞，語意上先修正
+    再保護，也避免兩步處理到同一段文字時互相干擾。
     """
     ws = [dict(w) for w in words]
     for term in sorted({t for t in terms if len(t) > 1}, key=len, reverse=True):
@@ -207,28 +174,11 @@ def merge_protected_terms(words, terms):
     return ws
 
 
-def get_prompt_hint(max_terms=20):
-    """回傳給 Whisper initial_prompt 用的提示字串。
-
-    結構化引導 Whisper 使用繁體中文進行轉錄，並帶入校對累積的正確專有名詞。
-    """
+def get_prompt_hint(max_terms=30):
+    """回傳給 Whisper initial_prompt 用的常見詞彙提示字串（依修正次數排序取前幾個）。"""
     glossary = load_glossary()
-    words = []
-    if glossary:
-        valid_entries = [
-            v for k, v in glossary.items()
-            if _is_valid_term_pair(k, v["correct"])
-        ]
-        terms = sorted(valid_entries, key=lambda v: -v["count"])
-        seen = set()
-        for t in terms[:max_terms]:
-            w = t["correct"]
-            if w not in seen:
-                seen.add(w)
-                words.append(w)
-
-    base_prompt = "這是一段繁體中文的課程與影音剪輯教學影片，請統一使用繁體中文標點與術語。"
-    if words:
-        return f"{base_prompt}常見專有名詞包含：{'、'.join(words)}。"
-    return base_prompt
-
+    if not glossary:
+        return None
+    terms = sorted(glossary.values(), key=lambda v: -v["count"])
+    words = [t["correct"] for t in terms[:max_terms]]
+    return "、".join(words) if words else None

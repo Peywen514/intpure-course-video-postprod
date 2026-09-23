@@ -56,6 +56,7 @@ from lib.pipeline import (  # noqa: E402
     save_caption_corrections,
     save_caption_segments,
     save_manual_cuts,
+    stage_privacy_clean,
     stage_bumper,
     stage_captions,
     stage_filler_detect,
@@ -66,6 +67,7 @@ from lib.pipeline import (  # noqa: E402
     save_broll_markers,
     stage_broll_plan,
     stage_broll_generate,
+    standardize_brand_video,
 )
 
 JOBS = {}
@@ -187,15 +189,22 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return self._send_json({"translate_langs": TRANSLATE_TARGET_LANGS})
 
         if parsed.path == "/api/brands":  # 片頭/片尾品牌清單，套用片頭尾時選版本用
+            BRANDS_DIR.mkdir(parents=True, exist_ok=True)
+            (BRANDS_DIR / DEFAULT_BRAND).mkdir(parents=True, exist_ok=True)
             brands = []
-            if BRANDS_DIR.exists():
-                for d in sorted(BRANDS_DIR.iterdir()):
-                    if d.is_dir():
-                        brands.append({
-                            "name": d.name,
-                            "has_intro": (d / "intro.mp4").exists(),
-                            "has_outro": (d / "outro.mp4").exists(),
-                        })
+            for d in sorted(BRANDS_DIR.iterdir()):
+                if d.is_dir():
+                    intro_file = d / "intro.mp4"
+                    outro_file = d / "outro.mp4"
+                    has_intro = intro_file.is_file()
+                    has_outro = outro_file.is_file()
+                    brands.append({
+                        "name": d.name,
+                        "has_intro": has_intro,
+                        "has_outro": has_outro,
+                        "intro_size": intro_file.stat().st_size if has_intro else 0,
+                        "outro_size": outro_file.stat().st_size if has_outro else 0,
+                    })
             return self._send_json(brands)
 
         if parsed.path == "/api/job":
@@ -335,11 +344,35 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         qs = parse_qs(parsed.query)
         episode = qs.get("episode", [""])[0]
 
-        # 除了不需要 episode 的三個端點，其餘全部會把 episode 拼進 WORK_DIR/INPUT_DIR/
+        # 除了不需要 episode 的端點，其餘全部會把 episode 拼進 WORK_DIR/INPUT_DIR/
         # OUTPUT_DIR 路徑——在這裡統一擋一次，不必每個 handler 各自檢查一遍。
-        _episode_exempt = ("/api/clear_all", "/api/upload", "/api/brands/import_path", "/api/queue_cancel")
+        _episode_exempt = (
+            "/api/clear_all",
+            "/api/upload",
+            "/api/brands/import_path",
+            "/api/brands/upload",
+            "/api/brands/delete",
+            "/api/queue_cancel",
+        )
         if parsed.path not in _episode_exempt and not _is_safe_episode(episode):
             return self._send_json({"error": "無效的集數名稱"}, status=400)
+
+        if parsed.path == "/api/run/privacy_clean":
+            def _crop_px(name):
+                raw = qs.get(name, ["0"])[0]
+                return int(raw) if raw.isdigit() else 0
+
+            crop = {
+                "top": _crop_px("crop_top"),
+                "bottom": _crop_px("crop_bottom"),
+                "left": _crop_px("crop_left"),
+                "right": _crop_px("crop_right"),
+            }
+            return self._start_job_response(
+                stage_privacy_clean, episode, crop=crop,
+                meta={"episode": episode, "stage_label": "隱私清理"},
+                dedupe_key=f"{episode}:privacy_clean",
+            )
 
         if parsed.path == "/api/run/transcribe":
             return self._start_job_response(
@@ -371,12 +404,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/run/bumper":
             brand = qs.get("brand", [DEFAULT_BRAND])[0]
-            transition = qs.get("transition", ["slideup_dissolve"])[0]
+            transition = qs.get("transition", ["pushup_fadeblack"])[0]
             return self._start_job_response(
                 stage_bumper, episode, brand,
+                transition=transition,
                 meta={"episode": episode, "stage_label": "套用片頭尾"},
                 dedupe_key=f"{episode}:bumper",
-                transition=transition,
             )
 
         if parsed.path == "/api/run/qa":  # ⑧ 品質檢查：一樣走 start_job 進佇列排隊
@@ -462,13 +495,23 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 body.get("brand", ""), body.get("kind", ""), body.get("source_path", "")
             )
 
+        if parsed.path == "/api/brands/upload":  # 上傳片頭/片尾影片到 brands/<brand>/
+            brand = qs.get("brand", [DEFAULT_BRAND])[0] or DEFAULT_BRAND
+            kind = qs.get("kind", [""])[0]
+            filename = qs.get("filename", [""])[0]
+            return self._handle_brand_upload(brand, kind, filename)
+
+        if parsed.path == "/api/brands/delete":  # 刪除或重設指定品牌的片頭/片尾素材
+            body = self._read_json_body()
+            return self._handle_brand_delete(body.get("brand", ""))
+
         if parsed.path == "/api/save":  # picker 工具存 style_override.json
             body = self._read_json_body()
             # 只寫呼叫方實際有帶的欄位；舊版 picker/index.html 沒有 Fontsize 欄位，
             # 若照樣寫 null 進檔案，merge_style 會把 Fontsize 疊成 None，燒字幕時 ffmpeg 會噴錯。
             out = {
                 k: body[k]
-                for k in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize", "Outline", "Fontname")
+                for k in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize", "Outline")
                 if k in body
             }
             episode_dir = WORK_DIR / episode
@@ -505,8 +548,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _handle_brand_import(self, brand, kind, source_path):
         # 這是純本機工具（server 只綁 127.0.0.1，沒有帳號驗證），跟其他階段一樣預設
         # 呼叫方是本人；brand 一樣只取檔名部分防路徑穿越，跟 _handle_upload 同一套做法。
-        safe_brand = Path(brand).name.strip()
-        if not safe_brand or kind not in ("intro", "outro"):
+        safe_brand = Path(brand).name.strip() or DEFAULT_BRAND
+        if kind not in ("intro", "outro"):
             return self._send_json({"error": "品牌名稱或類型不正確"}, status=400)
 
         # Windows「複製路徑」對檔案會自動加上一組雙引號，直接貼進輸入框會讓路徑字串
@@ -522,13 +565,80 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if not src.is_file():
             return self._send_json({"error": f"找不到檔案：{cleaned_path}"}, status=400)
         if src.suffix.lower() not in VIDEO_EXTENSIONS:
-            return self._send_json({"error": "檔案格式不支援"}, status=400)
+            return self._send_json(
+                {"error": f"檔案格式不支援：{src.suffix}（支援 {', '.join(sorted(VIDEO_EXTENSIONS))}）"},
+                status=400,
+            )
 
         brand_dir = BRANDS_DIR / safe_brand
         brand_dir.mkdir(parents=True, exist_ok=True)
         dest = brand_dir / f"{kind}.mp4"
-        shutil.copy2(src, dest)
+        try:
+            standardize_brand_video(src, dest)
+        except Exception as e:
+            return self._send_json({"error": f"處理品牌素材失敗: {e}"}, status=500)
         return self._send_json({"ok": True, "brand": safe_brand, "kind": kind})
+
+    def _handle_brand_upload(self, brand, kind, filename):
+        safe_brand = Path(brand).name.strip() or DEFAULT_BRAND
+        if kind not in ("intro", "outro"):
+            return self._send_json({"error": "類型必須為 intro 或 outro"}, status=400)
+
+        safe_name = Path(filename).name
+        suffix = Path(safe_name).suffix.lower()
+        if not safe_name or suffix not in VIDEO_EXTENSIONS:
+            return self._send_json(
+                {"error": f"檔案格式不支援：{suffix}（支援 {', '.join(sorted(VIDEO_EXTENSIONS))}）"},
+                status=400,
+            )
+
+        brand_dir = BRANDS_DIR / safe_brand
+        brand_dir.mkdir(parents=True, exist_ok=True)
+        dest = brand_dir / f"{kind}.mp4"
+        tmp_upload = brand_dir / f".tmp_upload_{kind}_{uuid.uuid4().hex[:8]}{suffix}"
+
+        length = int(self.headers.get("Content-Length", 0))
+        remaining = length
+        chunk_size = 1024 * 1024  # 1MB 串流寫檔避免大檔案塞爆記憶體
+        try:
+            with open(tmp_upload, "wb") as f:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    remaining -= len(chunk)
+
+            standardize_brand_video(tmp_upload, dest)
+        except Exception as e:
+            return self._send_json({"error": f"上傳或轉換影片失敗: {e}"}, status=500)
+        finally:
+            if tmp_upload.exists():
+                try:
+                    tmp_upload.unlink()
+                except OSError:
+                    pass
+
+        return self._send_json({"ok": True, "brand": safe_brand, "kind": kind, "filename": safe_name})
+
+    def _handle_brand_delete(self, brand):
+        safe_brand = Path(brand).name.strip()
+        if not safe_brand:
+            return self._send_json({"error": "請指定品牌名稱"}, status=400)
+
+        brand_dir = BRANDS_DIR / safe_brand
+        if not brand_dir.exists():
+            return self._send_json({"ok": True, "brand": safe_brand})
+
+        if safe_brand == DEFAULT_BRAND:
+            for fname in ("intro.mp4", "outro.mp4"):
+                fpath = brand_dir / fname
+                if fpath.exists():
+                    fpath.unlink()
+        else:
+            shutil.rmtree(brand_dir, ignore_errors=True)
+
+        return self._send_json({"ok": True, "brand": safe_brand})
 
     # ---------- helpers ----------
     def _picker_state(self, episode):
@@ -542,7 +652,6 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 "Spacing": CAPTION_STYLE["Spacing"],
                 "Fontsize": CAPTION_STYLE["Fontsize"],
                 "Outline": CAPTION_STYLE["Outline"],
-                "Fontname": CAPTION_STYLE["Fontname"],
             },
             "override": None,
             "words": [],

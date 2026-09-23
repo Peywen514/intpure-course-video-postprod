@@ -18,6 +18,25 @@
     background:#242320; color:#eee; border:1px solid #3a382f; border-radius:6px;
     padding:4px 8px; font-size:0.85rem;
   }
+  /* 三軌時間軸（V1主影片/S1字幕/⚠標記）：整支影片總長固定顯示在目前寬度裡，
+     不做縮放/拖拉裁切——這一頁的定位是「複核」不是剪輯引擎，拖拉裁切要另外算帳。 */
+  .timeline { margin-bottom: 14px; }
+  .timeline-body { position: relative; }
+  .track { display:flex; align-items:center; gap:6px; margin-bottom:3px; }
+  .track-label { width:28px; flex-shrink:0; font-size:0.68rem; color:#999; text-align:right; }
+  .track-body {
+    position:relative; flex:1; height:22px; background:#17160f; border:1px solid #3a382f;
+    border-radius:4px; cursor:pointer; overflow:hidden;
+  }
+  .track-caption .track-body { height:28px; }
+  .tl-block { position:absolute; top:2px; bottom:2px; border-radius:3px; }
+  .tl-cut { background:repeating-linear-gradient(45deg,#c0392b,#c0392b 4px,#8e2a20 4px,#8e2a20 8px); }
+  .tl-caption { background:#3a5d8f; border:1px solid #4a90f7; }
+  .tl-caption:hover { background:#4a90f7; }
+  .tl-flag { background:#e0a94a; border:1px solid #f0c060; }
+  /* 播放頭用 px 定位（不是 %）：這樣不用管左邊 track-label 欄寬度造成的位移，
+     位置直接量 track-body 實際的邊界算，label 改寬窄都不用同步改這裡。 */
+  .playhead { position:absolute; top:0; bottom:0; width:2px; background:#ff5252; pointer-events:none; }
   .teleprompter {
     height: 240px; overflow-y: auto; scroll-behavior: smooth;
     border:1px solid #3a382f; border-radius:8px; padding:6px; background:#17160f;
@@ -88,6 +107,23 @@
   <div class="hint">點時間戳可以跳到影片該處對照畫面確認內容；語音辨識偶爾會有錯字（例如專業術語誤判），直接修改文字框內容即可。文字太長可以按「✂」分成兩句（把游標點在文字框裡真正要斷開的那個位置再按，會照游標所在的字元位置切，不是按播放頭時間猜；游標不在有效範圍內才會退回用播放頭位置估算），斷錯的兩句可以按「⌃」跟上一句合併。播放時下面提詞窗會自動跟著捲到目前講的那句、對應文字框也會自動取得焦點（游標直接跑進去，不用手動點一下才能打字；如果你最近幾秒內才剛打過字，代表正在專心校對，這時候不會搶焦點），右下角圓鈕或 Ctrl+Space 可以暫停/繼續，不用切回影片本體。聽到贅詞或口誤（例如講錯字自己重講一次）：在文字框裡框選那段文字，按「✂ 剪除選取片段」，文字會直接刪掉，對應的影音片段也會記進跳剪清單一起剪掉。分句/合併/剪除選取片段這三個動作如果做錯了，按「↩ 復原上一步」（或游標不在文字框裡時按 Ctrl+Z）可以退回上一步，可以連續復原多步；文字框裡打字本身的錯字，用瀏覽器內建的 Ctrl+Z 就能復原，跟這個是分開的兩套機制。按「💾 儲存校正」（快捷鍵 Ctrl+S）存檔後會問這集校對是否完成，確認完成會接著問要不要直接跳去下一步「調整字幕位置」。所有編輯動作停手 3 秒會自動背景存檔一次（跟手動存檔存的是同一份檔案），右下角會顯示「已存檔 HH:MM:SS」或「有未存檔的變更…」，就算忘記按存檔、卡住切走或不小心重新整理，最近的進度也不會不見。</div>
   <div class="stage">
     <video id="video" controls></video>
+  </div>
+  <div class="timeline">
+    <div class="timeline-body" id="timelineBody">
+      <div class="track">
+        <div class="track-label">V1</div>
+        <div class="track-body" id="trackVideo" title="整支影片；斜紋紅色＝已標記待剪除的片段"></div>
+      </div>
+      <div class="track track-caption">
+        <div class="track-label">S1</div>
+        <div class="track-body" id="trackCaption" title="逐句字幕，點一下跳到該句"></div>
+      </div>
+      <div class="track">
+        <div class="track-label">⚠</div>
+        <div class="track-body" id="trackFlag" title="Whisper 疑似辨識錯誤的句子，點一下跳過去複核"></div>
+      </div>
+      <div class="playhead" id="playhead"></div>
+    </div>
   </div>
   <div class="toolbar">
     <label>播放速度
@@ -220,6 +256,70 @@ function updateActiveRow() {
 video.addEventListener("timeupdate", updateActiveRow);
 video.addEventListener("seeked", updateActiveRow);
 
+// ---------- 三軌時間軸：位置全部用「時間 / 影片總長」換算成 track-body 寬度的比例（%），
+// 三個軌道共用同一支 renderTimeline()，資料來源都是頁面裡已經有的 segments/manualCuts，
+// 沒有另外拉新的 API。影片 metadata（duration）還沒載入前算出來的比例沒意義，先跳過，
+// 等 loadedmetadata 事件觸發時會重畫一次。 ----------
+function renderTimeline() {
+  const dur = video.duration;
+  if (!dur || !isFinite(dur)) return;
+  const pct = (t) => Math.min(100, Math.max(0, (t / dur) * 100));
+
+  document.getElementById("trackVideo").innerHTML = manualCuts.map(c => `
+    <div class="tl-block tl-cut" style="left:${pct(c.start)}%;width:${Math.max(0.3, pct(c.end) - pct(c.start))}%" title="待剪除：${c.word}"></div>
+  `).join("");
+
+  document.getElementById("trackCaption").innerHTML = segments.map(seg => `
+    <div class="tl-block tl-caption" data-seek="${seg.start}" style="left:${pct(seg.start)}%;width:${Math.max(0.3, pct(seg.end) - pct(seg.start))}%" title="${seg.text}"></div>
+  `).join("");
+
+  document.getElementById("trackFlag").innerHTML = segments.filter(s => s.suspectedHallucination).map(seg => `
+    <div class="tl-block tl-flag" data-seek="${seg.start}" style="left:${pct(seg.start)}%;width:${Math.max(0.3, pct(seg.end) - pct(seg.start))}%" title="疑似辨識錯誤，建議複核：${seg.text}"></div>
+  `).join("");
+
+  updatePlayhead();
+}
+
+function updatePlayhead() {
+  const dur = video.duration;
+  const playhead = document.getElementById("playhead");
+  if (!dur || !isFinite(dur)) { playhead.style.left = "0px"; return; }
+  // 任一 track-body 拿來量寬度/位移都一樣（三軌寬度相同），這裡固定用字幕軌那個。
+  const body = document.getElementById("trackCaption");
+  const wrapper = document.getElementById("timelineBody");
+  const offsetLeft = body.getBoundingClientRect().left - wrapper.getBoundingClientRect().left;
+  const x = offsetLeft + (video.currentTime / dur) * body.getBoundingClientRect().width;
+  playhead.style.left = `${x}px`;
+}
+video.addEventListener("timeupdate", updatePlayhead);
+video.addEventListener("seeked", updatePlayhead);
+video.addEventListener("loadedmetadata", renderTimeline);
+
+// 點時間軸背景（不是點到區塊本身）＝依點擊位置換算時間跳過去；區塊自己的 data-seek
+// 點擊處理在下面 delegate 裡先攔截，不會被這裡的背景點擊邏輯蓋掉。
+["trackVideo", "trackCaption", "trackFlag"].forEach(id => {
+  const body = document.getElementById(id);
+  body.addEventListener("click", (e) => {
+    if (e.target !== body) return; // 點到區塊本身交給區塊自己的 data-seek 處理
+    const dur = video.duration;
+    if (!dur || !isFinite(dur)) return;
+    const rect = body.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    video.currentTime = Math.max(0, Math.min(dur, ratio * dur));
+    video.play();
+    updateActiveRow();
+  });
+  // 事件委派：字幕軌/標記軌上的區塊是動態生成的，點擊事件往上冒泡到 track-body 這裡統一處理，
+  // 不用每次 renderTimeline() 重畫後再重新逐一綁定。
+  body.addEventListener("click", (e) => {
+    const block = e.target.closest("[data-seek]");
+    if (!block) return;
+    video.currentTime = Number(block.dataset.seek);
+    video.play();
+    updateActiveRow();
+  });
+});
+
 function splitRow(id, cursorPos) {
   const i = segments.findIndex(s => s.id === id);
   if (i === -1) return;
@@ -315,6 +415,7 @@ function render() {
       splitRow(Number(btn.dataset.split), ta ? ta.selectionStart : undefined);
     };
   });
+  renderTimeline(); // segments 有異動（分句/合併/文字修改都會呼叫 render()）就跟著重畫時間軸
 }
 
 async function load() {
@@ -328,7 +429,10 @@ async function load() {
   segments = data.events.map(ev => {
     const text = corrections[ev.index] !== undefined ? corrections[ev.index] : ev.text;
     idCounter = Math.max(idCounter, ev.index + 1);
-    return { id: ev.index, start: ev.start, end: ev.end, text, originalText: ev.text };
+    return {
+      id: ev.index, start: ev.start, end: ev.end, text, originalText: ev.text,
+      suspectedHallucination: !!ev.suspected_hallucination,
+    };
   });
   manualCuts = data.manual_cuts || [];
   render();
@@ -473,6 +577,7 @@ function renderCutsList() {
   if (!manualCuts.length) {
     box.style.display = "none";
     items.innerHTML = "";
+    renderTimeline(); // 最後一段待剪除片段被取消時，V1 軌上的紅色標記也要跟著清掉
     return;
   }
   box.style.display = "block";
@@ -494,6 +599,7 @@ function renderCutsList() {
   items.querySelectorAll("[data-preview-cut]").forEach(btn => {
     btn.onclick = () => previewCut(manualCuts[Number(btn.dataset.previewCut)]);
   });
+  renderTimeline(); // manualCuts 異動（新增/取消待剪除片段）也要跟著重畫 V1 軌
 }
 
 // ---------- 試聽剪接效果：不用真的跑完整條跳剪流程產出檔案，直接在瀏覽器裡土法

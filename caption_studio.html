@@ -231,7 +231,7 @@
 </head>
 <body>
 <div class="wrap">
-  <a class="back-link" href="/dashboard.html">← 回儀表板</a>
+  <a class="back-link" href="/dashboard.html" onclick="returnToDashboard(); return false;">← 回儀表板</a>
   <h1>字幕編輯（<span id="episode-label"></span>）
     <button type="button" id="usageHintBtn" class="hint-inline-btn" title="重新看一次使用說明">? 使用說明</button>
   </h1>
@@ -787,6 +787,31 @@ async function manualSave() {
 }
 document.getElementById("saveBtn").addEventListener("click", manualSave);
 
+// ---------- 分頁管理（選項 B）：返回儀表板時關閉當前分頁並聚焦回原儀表板 ----------
+function returnToDashboard(autorunStage) {
+  const targetUrl = autorunStage
+    ? `/dashboard.html?episode=${encodeURIComponent(episode)}&autorun=${encodeURIComponent(autorunStage)}`
+    : `/dashboard.html`;
+
+  if (window.opener && !window.opener.closed) {
+    try {
+      window.opener.location.href = targetUrl;
+      window.opener.focus();
+      window.close();
+      setTimeout(() => {
+        if (!window.closed) {
+          location.href = targetUrl;
+        }
+      }, 300);
+      return;
+    } catch (e) {
+      console.warn("無法通知父分頁，在當前分頁跳轉:", e);
+    }
+  }
+  location.href = targetUrl;
+}
+window.returnToDashboard = returnToDashboard;
+
 // ---------- 套用字幕：存檔後呼叫 /api/run/captions（跟儀表板④原本同一個 API），
 // 輪詢跟 dashboard.html 的 runStage() 是同一套簡單模式。---------- ----------
 const applyBtn = document.getElementById("applyBtn");
@@ -825,9 +850,9 @@ async function applyCaptions() {
       // 這裡容易讓人誤會「剪輯壞了」：套用字幕只是把字幕燒進畫面，標記過的片段
       // 這時候聲音/畫面都還沒真的剪掉，要回儀表板按④套用跳剪才會真的剪——不講清楚
       // 的話，使用者點開套用完的影片看到片段還在，會以為是功能有問題。
-      statusMsg.innerHTML = `已套用字幕（畫面上還沒剪掉你標記的 ${manualCuts.length} 段，這步只燒字幕，不剪片），<a href="/dashboard.html?episode=${encodeURIComponent(episode)}&autorun=jumpcut" style="color:#8fd39a;">回儀表板套用跳剪 →</a>`;
+      statusMsg.innerHTML = `已套用字幕（畫面上還沒剪掉你標記的 ${manualCuts.length} 段，這步只燒字幕，不剪片），<a href="/dashboard.html?episode=${encodeURIComponent(episode)}&autorun=jumpcut" onclick="returnToDashboard('jumpcut'); return false;" style="color:#8fd39a;">回儀表板套用跳剪 →</a>`;
     } else {
-      statusMsg.innerHTML = '已套用字幕，<a href="/dashboard.html" style="color:#8fd39a;">回儀表板繼續下一步 →</a>';
+      statusMsg.innerHTML = '已套用字幕，<a href="/dashboard.html" onclick="returnToDashboard(); return false;" style="color:#8fd39a;">回儀表板繼續下一步 →</a>';
     }
   }, 1200);
 }
@@ -990,7 +1015,7 @@ function showJumpcutPrompt(cutCount) {
     </div>
   `;
   fillerModalBody.querySelector("[data-goto-jumpcut]").onclick = () => {
-    location.href = `/dashboard.html?episode=${encodeURIComponent(episode)}&autorun=jumpcut`;
+    returnToDashboard("jumpcut");
   };
   fillerModalBody.querySelector("[data-stay]").onclick = () => {
     closeFillerModal();

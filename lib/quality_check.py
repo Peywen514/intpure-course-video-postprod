@@ -28,8 +28,18 @@
 
 呼叫 ffmpeg 一律走 lib/ffmpeg_utils.run()（跟其他階段同一套包裝），靜音偵測直接
 重用 lib/silence_detect.py 現成的 detect_silence()，不重新寫一套。
+
+2026-09-10 新增三項（跟開源同類工具比對後補的缺口，見 memory course-video-postprod-tool）：
+  - check_dead_air()：對最終輸出檔重跑一次跳剪用的靜音偵測，抓「已經剪過但還留著」
+    的長停頓，跟 stage_filler_detect 找候選跳剪點是同一套引擎。
+  - check_loudness()：ffmpeg loudnorm 單通分析模式量響度，只在 True Peak 超標時
+    警示（見函式說明，這裡不對 LUFS 偏差示警）。
+  - detect_flash()：downsample 後量逐幀平均亮度變化，抓亮度驟變。這三項一樣是
+    「機械化輔助線索」，不是絕對判定，跟上面三個既有檢查同一個定位。
 """
 
+import json
+import re
 from pathlib import Path
 
 from config import (
@@ -41,9 +51,17 @@ from config import (
     QA_CONTACT_SHEET_EDGE_SKIP_RATIO,
     QA_CONTACT_SHEET_FRAMES,
     QA_CONTACT_SHEET_ROWS,
+    QA_FLASH_LUMA_DELTA_THRESHOLD,
+    QA_FLASH_MERGE_GAP_SEC,
+    QA_FLASH_SAMPLE_FPS,
+    QA_LOUDNESS_TARGET_LUFS,
+    QA_LOUDNESS_TP_WARN_DBTP,
     QA_SYNC_SILENCE_EDGE_IGNORE_SEC,
     QA_SYNC_SILENCE_MIN_DURATION_MS,
     QA_SYNC_SILENCE_NOISE_DB,
+    SILENCE_EDGE_IGNORE_SEC,
+    SILENCE_MIN_DURATION_MS,
+    SILENCE_NOISE_DB,
 )
 from lib import ffmpeg_utils
 from lib.silence_detect import detect_silence
@@ -198,3 +216,123 @@ def check_caption_sync(
         "silence_ranges": len(silence_ranges),
         "threshold": overlap_threshold,
     }
+
+
+def check_dead_air(
+    video_path,
+    start_ignore_sec=0.0,
+    min_duration_ms=SILENCE_MIN_DURATION_MS,
+    noise_db=SILENCE_NOISE_DB,
+    tail_ignore_sec=SILENCE_EDGE_IGNORE_SEC,
+):
+    """漏剪停頓檢查：對「最終輸出檔」重跑一次跳剪用的同一套靜音偵測引擎
+    （detect_silence()，直接重用不重寫），找出還留在成片裡、超過跳剪門檻的安靜
+    停頓——正常情況下這些應該早就被 stage_jumpcut 剪掉，出現在這裡代表這集還沒
+    真的跑過跳剪，或跳剪後又有新的停頓被接進來。
+
+    start_ignore_sec：忽略片頭時長（bumper 開場本來就安靜，不是漏剪），只有來源
+    是 final 版本時，呼叫端（stage_qa）算好片頭秒數傳進來，其餘情況傳 0。
+    tail_ignore_sec 沿用跳剪本身的邊界緩衝常數，收尾正常的等待/收尾靜音不算漏剪。
+    """
+    duration = ffmpeg_utils.duration_seconds(video_path)
+    raw_ranges = detect_silence(video_path, min_duration_ms, noise_db, edge_ignore_sec=0.0)
+    inner_start, inner_end = start_ignore_sec, duration - tail_ignore_sec
+    min_duration = min_duration_ms / 1000.0
+
+    gaps = []
+    for start, end in raw_ranges:
+        clipped_start, clipped_end = max(start, inner_start), min(end, inner_end)
+        if (clipped_end - clipped_start) < min_duration:
+            continue
+        gaps.append({
+            "start": round(clipped_start, 2),
+            "end": round(clipped_end, 2),
+            "duration": round(clipped_end - clipped_start, 2),
+        })
+
+    return {"gaps": gaps, "count": len(gaps), "min_duration_ms": min_duration_ms}
+
+
+_LOUDNORM_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def check_loudness(video_path, target_lufs=QA_LOUDNESS_TARGET_LUFS, tp_warn_dbtp=QA_LOUDNESS_TP_WARN_DBTP):
+    """響度量測：ffmpeg loudnorm 濾鏡單通分析模式（不是兩通響度正規化，這個專案
+    沒有做響度正規化，這裡只量測不改動音訊），量出 Integrated Loudness（LUFS）
+    跟 True Peak（dBTP）。
+
+    只在 True Peak 超過 tp_warn_dbtp 時示警，不對「LUFS 離 target 多遠」下警示：
+    這個專案從未做過響度正規化，量出來的 LUFS 幾乎必然偏離 target，若照 LUFS 偏差
+    示警，等於每一集都跳警告，變成狼來了沒人看；True Peak 超標才是真的會在部分
+    播放裝置造成削波爆音的具體風險，值得示警。
+    """
+    result = ffmpeg_utils.run(
+        [
+            "ffmpeg", "-i", str(video_path),
+            "-af", f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11:print_format=json",
+            "-f", "null", "-",
+        ],
+        check=False,  # -f null 不寫實體檔，部分 ffmpeg 版本仍會回傳非 0，不能當失敗處理
+    )
+    # loudnorm 的 JSON 摘要印在 stderr 的最後一段（前面還有一般 log），取最後一個
+    # 大括號區塊即可，不用逐行解析。
+    matches = _LOUDNORM_JSON_RE.findall(result.stderr or "")
+    if not matches:
+        return {"measured": False, "reason": "無法解析 ffmpeg loudnorm 輸出"}
+
+    data = json.loads(matches[-1])
+    true_peak = float(data["input_tp"])
+    return {
+        "measured": True,
+        "integrated_lufs": float(data["input_i"]),
+        "true_peak_dbtp": true_peak,
+        "target_lufs": target_lufs,
+        "true_peak_warning": true_peak > tp_warn_dbtp,
+        "true_peak_limit": tp_warn_dbtp,
+    }
+
+
+_YAVG_RE = re.compile(r"lavfi\.signalstats\.YAVG=([\d.]+)")
+
+
+def detect_flash(
+    video_path,
+    sample_fps=QA_FLASH_SAMPLE_FPS,
+    luma_delta_threshold=QA_FLASH_LUMA_DELTA_THRESHOLD,
+    merge_gap_sec=QA_FLASH_MERGE_GAP_SEC,
+):
+    """閃爍/爆閃偵測：先降到 sample_fps 張/秒（全片用原始 fps 逐幀分析對 CPU-only
+    機器太慢），用 signalstats 濾鏡量每一取樣幀的平均亮度（YAVG，0-255），相鄰
+    取樣點亮度差超過門檻視為一次閃爍，merge_gap_sec 內的相鄰事件合併成一次。
+
+    ⚠️ 螢幕錄影課程影片天生有大量正常的高亮度變化（切視窗、捲頁、彈出對話框），
+    這跟真正需要示警的爆閃/頻閃很難靠簡單門檻完全分開——門檻刻意設寬，且整個
+    檢查可以用 config.QA_FLASH_ENABLED 關掉；第一次真實素材跑出來若誤報太多，
+    直接關掉這項比死磕調門檻划算。
+    """
+    result = ffmpeg_utils.run(
+        [
+            "ffmpeg", "-i", str(video_path),
+            "-vf", f"fps={sample_fps},signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-",
+            "-f", "null", "-",
+        ],
+        check=False,
+    )
+    text = (result.stdout or "") + (result.stderr or "")
+    yavgs = [float(m.group(1)) for m in _YAVG_RE.finditer(text)]
+    interval = 1.0 / sample_fps
+
+    events = []
+    for i in range(1, len(yavgs)):
+        delta = abs(yavgs[i] - yavgs[i - 1])
+        if delta >= luma_delta_threshold:
+            events.append({"time": round(i * interval, 2), "luma_delta": round(delta, 1)})
+
+    merged = []
+    for e in events:
+        if merged and e["time"] - merged[-1]["time"] <= merge_gap_sec:
+            merged[-1]["luma_delta"] = max(merged[-1]["luma_delta"], e["luma_delta"])
+        else:
+            merged.append(dict(e))
+
+    return {"events": merged, "count": len(merged), "sample_fps": sample_fps, "threshold": luma_delta_threshold}

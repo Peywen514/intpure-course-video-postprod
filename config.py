@@ -177,6 +177,36 @@ QA_ASPECT_RATIO_TOLERANCE = 0.02
 # 依據：允許 2% 的畫幅比誤差再判定為「不符」，避免正常的解析度捨入（例如 1920x1080 跟
 # 1918x1080 這種編碼過程常見的微小差異）被誤判成警示。
 
+# 漏剪停頓檢查（dead air，Phase 7 QA 擴充，2026-09-10 新增）：對最終輸出檔重跑一次
+# 跳剪用的同一套靜音偵測引擎（lib/silence_detect.detect_silence()），抓出「已經
+# 剪過但還留著」的長停頓。直接沿用 SILENCE_MIN_DURATION_MS / SILENCE_NOISE_DB 當
+# 門檻，不重新調一組數字——兩邊「多長算漏剪」的判準本來就該一致。
+
+# 響度檢查（loudness）：量測用 ffmpeg loudnorm 單通分析模式，只回報數字＋True Peak
+# 是否超標，不對 LUFS 偏離 target 示警——這個專案從未做過響度正規化，若照 LUFS
+# 偏差示警，幾乎每一集都會跳警告，等於狼來了沒人看（見 lib/quality_check.py
+# check_loudness() 說明）。
+QA_LOUDNESS_TARGET_LUFS = -16.0
+# 依據：業界串流/廣播常見響度目標值，這裡純粹是 loudnorm 濾鏡量測需要的參考點。
+QA_LOUDNESS_TP_WARN_DBTP = -1.0
+# 依據：True Peak 超過 -1dBTP 是實際會在部分播放裝置造成削波爆音的常見安全上限，
+# 這是唯一會觸發警示的響度指標。
+
+# 閃爍/爆閃偵測（flash）：downsample 後量逐幀平均亮度變化，抓相鄰取樣點的亮度驟變。
+QA_FLASH_ENABLED = True
+# 依據：Jill 明確點名「閃爍」這個檢查類別，先做出來讓她看真實結果決定要不要留；
+# 螢幕錄影課程影片本來就有大量正常的高亮度切換（切視窗/捲頁），第一次真實測試若
+# 誤報太多，直接把這個常數改 False 關掉，比死磕調門檻划算。
+QA_FLASH_SAMPLE_FPS = 5
+# 依據：全片用原始 fps 逐幀分析對這台 CPU-only 機器太慢；螢幕錄影的畫面變化速度
+# 遠低於一般影片，降到 5fps 取樣仍抓得到持續數百毫秒以上的閃爍。
+QA_FLASH_LUMA_DELTA_THRESHOLD = 60
+# 依據：YAVG（0-255 灰階平均亮度）相鄰取樣幀差值門檻，先抓一個寬鬆值，用真實素材
+# 跑出來的結果校準，若誤報太多再往上調高。
+QA_FLASH_MERGE_GAP_SEC = 1.0
+# 依據：同一次畫面切換在降採樣後可能連續觸發兩次門檻，1 秒內的相鄰事件視為同一次
+# 閃爍，避免清單被同一件事灌爆。
+
 # 字幕翻譯（Phase 4，2026-07-14 新增）：輸出跟原文同一組時間碼的 .srt，只換文字，
 # 不燒錄進影片（呼應 docs/handbook_同類產品比較_HelloIrene.md 的市場掃描結論——這塊
 # 是我方原本的功能缺口）。

@@ -8,3 +8,16 @@ output/*
 !output/.gitkeep
 work/*
 !work/.gitkeep
+
+# 品牌與測試影音素材（避免上傳大檔與個資/商業素材至版控）
+*.mp4
+*.mov
+*.mkv
+*.avi
+brands/*/*.mp4
+brands/*/*.mov
+brands/侯老師/
+
+# 暫存與快照
+*.bak*
+scratch/

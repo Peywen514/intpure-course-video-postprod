@@ -164,14 +164,11 @@ def build_ass(events, style, play_res=(1920, 1080)):
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
 
-    spacing = style.get("Spacing", 0)
-    spacing_tag = f"{{\\fsp{spacing}}}" if spacing else ""
-
     lines = []
     for start, end, text in events:
         text = text.replace("\n", "\\N")
         lines.append(
-            f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},{style['Name']},,0,0,0,,{spacing_tag}{text}"
+            f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},{style['Name']},,0,0,0,,{text}"
         )
 
     return header + "\n".join(lines) + "\n"
@@ -181,7 +178,7 @@ def merge_style(defaults, override=None):
     """把 style_override.json（若存在）疊在 config 預設值上。"""
     merged = dict(defaults)
     if override:
-        for key in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize", "Outline", "Fontname"):
+        for key in ("MarginV", "MarginL", "MarginR", "Spacing", "Fontsize", "Outline"):
             if key in override:
                 merged[key] = override[key]
     return merged

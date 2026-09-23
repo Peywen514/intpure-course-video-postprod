@@ -19,7 +19,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("episode")
     parser.add_argument("--brand", default=DEFAULT_BRAND)
-    parser.add_argument("--transition", default="slideup_fade", help="轉場效果 (slideup_fade, slideup_dissolve, slideup_slideup, fadeblack, dissolve, slideup, none)")
+    parser.add_argument("--transition", default="pushup_fadeblack", help="轉場效果 (pushup_fadeblack, fadeblack, dissolve, slideup, none)")
     parser.add_argument("video", nargs="?", default=None)
     args = parser.parse_args()
 
